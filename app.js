@@ -49,50 +49,57 @@ app.get("/", (req, res) => {
   });
 });
 
-// ✅ الاتصال بقاعدة البيانات
-mongoose.connect(process.env.MONGO_URI + "&directConnection=true")
-  .then(() => {
-    console.log("✅ MongoDB connected");
-    console.log("📊 Database:", mongoose.connection.name);
-
-    app.listen(PORT, () => {
-      console.log("\n" + "=".repeat(60));
-      console.log("🚀 Backend Server Started Successfully!");
-      console.log("=".repeat(60));
-      console.log(`\n🌐 Server URL: ${BASE_URL}`);
-      console.log(`🎨 Frontend URL: ${FRONTEND_URL}`);
-      console.log(`🔐 JWT Secret: ${process.env.JWT_SECRET ? "✅ Configured" : "⚠️  NOT SET!"}`);
-      console.log("\n📋 Available Endpoints:");
-      console.log(`   POST ${BASE_URL}/routes/auth/login`);
-      console.log(`   GET  ${BASE_URL}/routes/storge`);
-      console.log(`   POST ${BASE_URL}/routes/newItem`);
-      console.log(`   POST ${BASE_URL}/routes/receipts/add`);
-      console.log(`   POST ${BASE_URL}/routes/delivery/add`);
-      console.log(`   GET  ${BASE_URL}/routes/dshbord`);
-      console.log(`   POST ${BASE_URL}/routes/newUser`);
-      console.log("\n💾 Static Files:");
-      console.log(`   📁 Receipts: ${BASE_URL}/receipts/<filename>.pdf`);
-      console.log(`   📁 Delivery: ${BASE_URL}/delivery/<filename>.pdf`);
-      console.log("\n" + "=".repeat(60) + "\n");
+// ✅ الاتصال بقاعدة البيانات (تجاوز إذا لم يكن هناك URI)
+if (process.env.MONGO_URI) {
+  mongoose.connect(process.env.MONGO_URI + "&directConnection=true")
+    .then(() => {
+      console.log("✅ MongoDB connected");
+      startServer();
+    })
+    .catch((err) => {
+      console.error("❌ MongoDB connection error:", err);
+      process.exit(1);
     });
-  })
-  .catch((err) => {
-    console.error("❌ MongoDB connection error:", err);
-    process.exit(1);
+
+  mongoose.connection.on('error', (err) => {
+    console.error('❌ MongoDB Error:', err);
   });
 
-// ✅ معالجة أخطاء Mongoose
-mongoose.connection.on('error', (err) => {
-  console.error('❌ MongoDB Error:', err);
-});
+  mongoose.connection.on('disconnected', () => {
+    console.log('⚠️  MongoDB Disconnected');
+  });
+} else {
+  console.log("⚠️ MongoDB connection skipped (no URI provided).");
+  startServer();
+}
 
-mongoose.connection.on('disconnected', () => {
-  console.log('⚠️  MongoDB Disconnected');
-});
+// ✅ بدء السيرفر
+function startServer() {
+  app.listen(PORT, () => {
+    console.log("\n" + "=".repeat(60));
+    console.log("🚀 Backend Server Started Successfully!");
+    console.log("=".repeat(60));
+    console.log(`\n🌐 Server URL: ${BASE_URL}`);
+    console.log(`🎨 Frontend URL: ${FRONTEND_URL}`);
+    console.log(`🔐 JWT Secret: ${process.env.JWT_SECRET ? "✅ Configured" : "⚠️  NOT SET!"}`);
+    console.log("\n📋 Available Endpoints:");
+    console.log(`   POST ${BASE_URL}/routes/auth/login`);
+    console.log(`   GET  ${BASE_URL}/routes/storge`);
+    console.log(`   POST ${BASE_URL}/routes/newItem`);
+    console.log(`   POST ${BASE_URL}/routes/receipts/add`);
+    console.log(`   POST ${BASE_URL}/routes/delivery/add`);
+    console.log(`   GET  ${BASE_URL}/routes/dshbord`);
+    console.log(`   POST ${BASE_URL}/routes/newUser`);
+    console.log("\n💾 Static Files:");
+    console.log(`   📁 Receipts: ${BASE_URL}/receipts/<filename>.pdf`);
+    console.log(`   📁 Delivery: ${BASE_URL}/delivery/<filename>.pdf`);
+    console.log("\n" + "=".repeat(60) + "\n");
+  });
+}
 
 // ✅ معالجة إيقاف التطبيق
 process.on('SIGINT', async () => {
-  await mongoose.connection.close();
+  if (mongoose.connection.readyState) await mongoose.connection.close();
   console.log('\n👋 تم إيقاف الاتصال بقاعدة البيانات');
   process.exit(0);
 });
