@@ -49,16 +49,16 @@ app.get("/", (req, res) => {
   });
 });
 
-// ✅ الاتصال بقاعدة البيانات (تجاوز إذا لم يكن هناك URI)
-if (process.env.MONGO_URI) {
+// ✅ الاتصال بقاعدة البيانات (تجاوز إذا لم يكن هناك URI أو عند فشل الاتصال)
+if (process.env.MONGO_URI && process.env.MONGO_URI.trim() !== "") {
   mongoose.connect(process.env.MONGO_URI + "&directConnection=true")
     .then(() => {
       console.log("✅ MongoDB connected");
       startServer();
     })
     .catch((err) => {
-      console.error("❌ MongoDB connection error:", err);
-      process.exit(1);
+      console.error("❌ MongoDB connection error (skipped for now):", err);
+      startServer(); // نتابع تشغيل السيرفر حتى لو فشل الاتصال
     });
 
   mongoose.connection.on('error', (err) => {
