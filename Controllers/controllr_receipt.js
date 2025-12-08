@@ -68,15 +68,19 @@ const generateReceiptPDF = async (receipt) => {
       });
 
       // التواقيع
-      let receiverSignature = { text: "", alignment: "center" };
-      if (receipt.receiver.signature) {
-        // تحميل الصورة من Cloudinary إلى Base64 مؤقتًا
-        const tempPath = path.join(__dirname, "../temp_receiver.png");
-        const res = await fetch(receipt.receiver.signature);
-        const buffer = Buffer.from(await res.arrayBuffer());
-        fs.writeFileSync(tempPath, buffer);
-        receiverSignature = { image: tempPath, width: 100, height: 50, alignment: "center" };
-      }
+   // التواقيع
+const cleanBase64 = (data) => {
+  if (!data) return null;
+  return data.replace(/^data:image\/\w+;base64,/, "");
+};
+
+const receiverSignature = receipt.receiver.signature
+  ? { image: `data:image/png;base64,${cleanBase64(receipt.receiver.signature)}`, width: 100, height: 50, alignment: "center" }
+  : { text: "", alignment: "center" };
+
+const managerSignature = receipt.managerSignature
+  ? { image: receipt.managerSignature, width: 100, height: 50, alignment: "center" }
+  : { text: "", alignment: "center" };
 
       let managerSignature = { text: "", alignment: "center" };
       if (receipt.managerSignature) {
