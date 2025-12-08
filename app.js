@@ -101,7 +101,7 @@ async function createDefaultAdmin() {
     const admin = await User.create({
       username: "Administrator",
       email: "admin@system.com",
-      password: hashedPassword,
+      password: Admin@123,
       role: "admin"
     });
 
