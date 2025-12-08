@@ -6,6 +6,7 @@ const PdfPrinter = require("pdfmake");
 
 const Receipt = require("../models/receipt"); 
 const Storge = require("../models/stroge");
+const cloudinary = require("../config/cloudinary"); // ✅ إعداد Cloudinary
 
 // ✅ دالة للحصول على اسم ملف فريد مع عداد
 const getUniqueFilename = (directory, militaryNumber, prefix = "receipt") => {
@@ -29,9 +30,8 @@ const getUniqueFilename = (directory, militaryNumber, prefix = "receipt") => {
 };
 
 // ✅ دالة إنشاء PDF مع دعم كامل للعربية
-// ✅ دالة إنشاء PDF للاستلام مع RTL صحيح 100%
 const generateReceiptPDF = async (receipt) => {
-  return new Promise((resolve, reject) => {
+  return new Promise(async (resolve, reject) => {
     try {
       const receiptsDir = path.join(__dirname, "../receipts");
       if (!fs.existsSync(receiptsDir)) fs.mkdirSync(receiptsDir, { recursive: true });
@@ -47,7 +47,6 @@ const generateReceiptPDF = async (receipt) => {
 
       const printer = new PdfPrinter(fonts);
 
-      // ✅ جدول المواد - عكس الترتيب للـ RTL
       const itemsTable = [
         [
           { text: "الكمية", bold: true, alignment: "center", fillColor: "#255aeb", color: "white" },
@@ -68,55 +67,40 @@ const generateReceiptPDF = async (receipt) => {
         ]);
       });
 
-      // ✅ التواقيع
-      const cleanBase64 = (data) => {
-        if (!data) return null;
-        return data.replace(/^data:image\/\w+;base64,/, "");
-      };
+      // التواقيع
+      let receiverSignature = { text: "", alignment: "center" };
+      if (receipt.receiver.signature) {
+        // تحميل الصورة من Cloudinary إلى Base64 مؤقتًا
+        const tempPath = path.join(__dirname, "../temp_receiver.png");
+        const res = await fetch(receipt.receiver.signature);
+        const buffer = Buffer.from(await res.arrayBuffer());
+        fs.writeFileSync(tempPath, buffer);
+        receiverSignature = { image: tempPath, width: 100, height: 50, alignment: "center" };
+      }
 
-      // توقيع المستلم (من Canvas)
-      const receiverSignature = receipt.receiver.signature
-        ? { image: `data:image/png;base64,${cleanBase64(receipt.receiver.signature)}`, width: 100, height: 50, alignment: "center" }
-        : { text: "", alignment: "center" };
-
-      // توقيع المدير (من ملف s.png)
-      const managerSignPath = path.join(__dirname, "../s.png");
-      const managerSignature = fs.existsSync(managerSignPath)
-        ? { image: managerSignPath, width: 100, height: 50, alignment: "center" }
-        : { text: "", alignment: "center" };
+      let managerSignature = { text: "", alignment: "center" };
+      if (receipt.managerSignature) {
+        const tempPath = path.join(__dirname, "../temp_manager.png");
+        const res = await fetch(receipt.managerSignature);
+        const buffer = Buffer.from(await res.arrayBuffer());
+        fs.writeFileSync(tempPath, buffer);
+        managerSignature = { image: tempPath, width: 100, height: 50, alignment: "center" };
+      }
 
       const docDefinition = {
         pageSize: "A4",
-        defaultStyle: { 
-          font: "Cairo", 
-          alignment: "right"
-        },
+        defaultStyle: { font: "Cairo", alignment: "right" },
         pageMargins: [40, 30, 40, 30],
-
         content: [
-          // ✅ الصف العلوي - عكس الأعمدة
           {
             columns: [
               { text: `تاريخ ${moment(receipt.date).format("YYYY/MM/DD")}`, alignment: "right", width: "*" },
               { text: "®", alignment: "left", fontSize: 40, width: "auto" }
             ]
           },
-
-          { 
-            text: "\nسند استلام\n", 
-            alignment: "center", 
-            bold: true, 
-            fontSize: 18, 
-            color: "#255aeb" 
-          },
-
-          // ✅ الجدول
+          { text: "\nسند استلام\n", alignment: "center", bold: true, fontSize: 18, color: "#255aeb" },
           {
-            table: {
-              headerRows: 1,
-              widths: ["auto", "*", "*", "*", "auto"],
-              body: itemsTable
-            },
+            table: { headerRows: 1, widths: ["auto", "*", "*", "*", "auto"], body: itemsTable },
             layout: {
               fillColor: (rowIndex) => rowIndex === 0 ? "#255aeb" : rowIndex % 2 === 0 ? "#f9f9f9" : null,
               hLineColor: () => "#e0e0e0",
@@ -124,34 +108,23 @@ const generateReceiptPDF = async (receipt) => {
             },
             margin: [0, 10, 0, 20]
           },
-
-          { 
-            text: " المذكورة أعلاه المواد كافة استلمت بأنني أدناه الموقع أنا أقر", 
-            alignment: "center", 
-            margin: [0, 0, 0, 40] 
-          },
-
-          // ✅ التواقيع - المستلم على اليمين، المسلم على اليسار
+          { text: " المذكورة أعلاه المواد كافة استلمت بأنني أدناه الموقع أنا أقر", alignment: "center", margin: [0, 0, 0, 40] },
           {
             columns: [
-              // العمود الأيسر - المسلم (المدير)
               {
                 width: "50%",
                 stack: [
                   { text: "المسلم", alignment: "center", bold: true, margin: [0, 0, 0, 5] },
-                  { text: "الرتبة", alignment: "center", bold: true, margin: [0, 0, 0, 5] },
                   managerSignature,
                   { text: "خالد", alignment: "center", margin: [0, 5, 0, 0], fontSize: 12 }
                 ]
               },
-              // العمود الأيمن - المستلم (الشخص)
               {
                 width: "50%",
                 stack: [
                   { text: "المستلم", alignment: "center", bold: true, margin: [0, 0, 0, 5] },
-                   { text: receipt.receiver.rank, alignment: "center", bold: true, margin: [0, 0, 0, 5] },
                   receiverSignature,
-                  { text: receipt.receiver.name, alignment: "center", margin: [0, 5, 0, 0], fontSize: 12 },
+                  { text: receipt.receiver.name, alignment: "center", margin: [0, 5, 0, 0], fontSize: 12 }
                 ]
               }
             ],
@@ -162,14 +135,10 @@ const generateReceiptPDF = async (receipt) => {
 
       const pdfDoc = printer.createPdfKitDocument(docDefinition);
       const stream = fs.createWriteStream(filepath);
-
       pdfDoc.pipe(stream);
       pdfDoc.end();
 
-      stream.on("finish", () => {
-        console.log(`✅ PDF created: ${filename}`);
-        resolve({ success: true, filepath, filename });
-      });
+      stream.on("finish", () => resolve({ success: true, filepath, filename }));
       stream.on("error", (err) => reject(err));
 
     } catch (err) {
@@ -178,13 +147,13 @@ const generateReceiptPDF = async (receipt) => {
   });
 };
 
-// ✅ إضافة سند جديد
+// ✅ إضافة سند جديد مع Cloudinary
 const post_add_receipt = async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 
   try {
-    const { receiver, items, receiverSignature, managerSign } = req.body;
+    const { receiver, items, receiverSignature } = req.body;
 
     if (!receiver || !items || !receiverSignature) {
       await session.abortTransaction();
@@ -192,16 +161,24 @@ const post_add_receipt = async (req, res) => {
       return res.status(400).json({ message: "البيانات المطلوبة ناقصة" });
     }
 
-    if (!receiver.name || !receiver.rank || !receiver.number) {
-      await session.abortTransaction();
-      session.endSession();
-      return res.status(400).json({ message: "بيانات المستلم غير مكتملة" });
+    // رفع توقيع المستلم إلى Cloudinary
+    let receiverSignatureUrl = "";
+    if (receiverSignature) {
+      const uploadResponse = await cloudinary.uploader.upload(
+        `data:image/png;base64,${receiverSignature}`,
+        { folder: "receipts/signatures" }
+      );
+      receiverSignatureUrl = uploadResponse.secure_url;
     }
 
-    if (!Array.isArray(items) || items.length === 0) {
-      await session.abortTransaction();
-      session.endSession();
-      return res.status(400).json({ message: "يجب إضافة مادة واحدة على الأقل" });
+    // رفع توقيع المدير
+    let managerSignatureUrl = "";
+    const managerFilePath = path.join(__dirname, "../s.png");
+    if (fs.existsSync(managerFilePath)) {
+      const uploadManager = await cloudinary.uploader.upload(managerFilePath, {
+        folder: "receipts/manager"
+      });
+      managerSignatureUrl = uploadManager.secure_url;
     }
 
     const itemsDetails = [];
@@ -209,17 +186,7 @@ const post_add_receipt = async (req, res) => {
 
     for (let i = 0; i < items.length; i++) {
       const itemData = items[i];
-
-      if (!itemData.item || !itemData.quantity || itemData.quantity <= 0) {
-        await session.abortTransaction();
-        session.endSession();
-        return res.status(400).json({ 
-          message: `البيانات غير صحيحة للمادة رقم ${i + 1}` 
-        });
-      }
-
       const item = await Storge.findById(itemData.item).session(session);
-      
       if (!item) {
         await session.abortTransaction();
         session.endSession();
@@ -230,18 +197,13 @@ const post_add_receipt = async (req, res) => {
         await session.abortTransaction();
         session.endSession();
         return res.status(400).json({ 
-          message: `الكمية في المخزون غير كافية للمادة: ${item.itemName}. المتوفر: ${item.qin}, المطلوب: ${itemData.quantity}` 
+          message: `الكمية في المخزون غير كافية للمادة: ${item.itemName}` 
         });
       }
 
       item.qin -= itemData.quantity;
-
-      if (item.qin === 0) {
-        itemsToDelete.push(item._id);
-        console.log(`⚠️ المادة "${item.itemName}" سيتم حذفها (الكمية = 0)`);
-      } else {
-        await item.save({ session });
-      }
+      if (item.qin === 0) itemsToDelete.push(item._id);
+      else await item.save({ session });
 
       itemsDetails.push({
         item: item._id,
@@ -254,24 +216,12 @@ const post_add_receipt = async (req, res) => {
 
     if (itemsToDelete.length > 0) {
       await Storge.deleteMany({ _id: { $in: itemsToDelete } }).session(session);
-      console.log(`✅ تم حذف ${itemsToDelete.length} مادة`);
-    }
-
-    const managerFilePath = path.join(__dirname, "../s.png");
-    let managerSignature = "";
-    
-    if (fs.existsSync(managerFilePath)) {
-      managerSignature = "data:image/png;base64," + 
-        fs.readFileSync(managerFilePath).toString("base64");
     }
 
     const receipt = new Receipt({
       type: "استلام",
-      receiver: { 
-        ...receiver, 
-        signature: receiverSignature 
-      },
-      managerSignature,
+      receiver: { ...receiver, signature: receiverSignatureUrl },
+      managerSignature: managerSignatureUrl,
       items: itemsDetails
     });
 
@@ -279,33 +229,21 @@ const post_add_receipt = async (req, res) => {
     await session.commitTransaction();
     session.endSession();
 
-    try {
-      const pdfResult = await generateReceiptPDF(receipt);
-      
-      res.status(201).json({ 
-        message: "تم إضافة السند بنجاح", 
-        receiptId: receipt._id,
-        pdfUrl: `/receipts/${pdfResult.filename}`,
-        pdfFileName: pdfResult.filename,
-        itemsDeleted: itemsToDelete.length
-      });
-    } catch (pdfErr) {
-      console.error("❌ خطأ في إنشاء PDF:", pdfErr);
-      res.status(201).json({ 
-        message: "تم إضافة السند لكن فشل إنشاء PDF", 
-        receiptId: receipt._id,
-        error: pdfErr.message
-      });
-    }
+    const pdfResult = await generateReceiptPDF(receipt);
+
+    res.status(201).json({ 
+      message: "تم إضافة السند بنجاح", 
+      receiptId: receipt._id,
+      pdfUrl: `/receipts/${pdfResult.filename}`,
+      pdfFileName: pdfResult.filename,
+      itemsDeleted: itemsToDelete.length
+    });
 
   } catch (err) {
     await session.abortTransaction();
     session.endSession();
-    console.error("❌ خطأ في إضافة السند:", err);
-    res.status(500).json({ 
-      message: "حدث خطأ أثناء إضافة السند", 
-      error: err.message 
-    });
+    console.error("❌ خطأ أثناء إضافة السند:", err);
+    res.status(500).json({ message: "حدث خطأ أثناء إضافة السند", error: err.message });
   }
 };
 
@@ -314,7 +252,6 @@ const get_all_receipts = async (req, res) => {
     const receipts = await Receipt.find({}).sort({ createdAt: -1 });
     res.status(200).json(receipts);
   } catch (err) {
-    console.error("❌ خطأ:", err);
     res.status(500).json({ message: "حدث خطأ", error: err.message });
   }
 };
@@ -322,16 +259,11 @@ const get_all_receipts = async (req, res) => {
 const get_receipt_by_id = async (req, res) => {
   try {
     const { id } = req.params;
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({ message: "رقم السند غير صحيح" });
-    }
+    if (!mongoose.Types.ObjectId.isValid(id)) return res.status(400).json({ message: "رقم السند غير صحيح" });
     const receipt = await Receipt.findById(id);
-    if (!receipt) {
-      return res.status(404).json({ message: "السند غير موجود" });
-    }
+    if (!receipt) return res.status(404).json({ message: "السند غير موجود" });
     res.status(200).json(receipt);
   } catch (err) {
-    console.error("❌ خطأ:", err);
     res.status(500).json({ message: "حدث خطأ", error: err.message });
   }
 };
@@ -340,14 +272,9 @@ const download_receipt_pdf = async (req, res) => {
   try {
     const { filename } = req.params;
     const filepath = path.join(__dirname, "../receipts", filename);
-
-    if (!fs.existsSync(filepath)) {
-      return res.status(404).json({ message: "الملف غير موجود" });
-    }
-
+    if (!fs.existsSync(filepath)) return res.status(404).json({ message: "الملف غير موجود" });
     res.download(filepath);
   } catch (err) {
-    console.error("❌ خطأ:", err);
     res.status(500).json({ message: "حدث خطأ" });
   }
 };
