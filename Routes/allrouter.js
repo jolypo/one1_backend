@@ -54,7 +54,7 @@ router.post("/delivery/add", authMiddleware, adminMiddleware, post_add_delivery)
 router.get("/delivery/all", authMiddleware, adminMiddleware, get_all_delivery);
 router.get("/delivery/search", authMiddleware, adminMiddleware, searchDeliveredItemsDelivery);
 router.get("/delivery/person-items", authMiddleware, adminMiddleware, getPersonItems);
-router.get("/delivery/download/:filename", authMiddleware, download_delivery_pdf);
+
 router.get("/delivery/:id", authMiddleware, adminMiddleware, get_delivery_by_id);
 // Route جديدة للبحث العام (Admin + User)
 router.get("/storge/search-public", authMiddleware,adminMiddleware, searchItemPublic);
