@@ -8,30 +8,31 @@ const Receipt = require("../models/receipt");
 const Storge = require("../models/stroge");
 const cloudinary = require("./cloudinary");
 
-// ✅ دالة للحصول على اسم ملف فريد مع عداد
+// ================== دالة للحصول على اسم ملف فريد ==================
 const getUniqueFilename = (directory, militaryNumber, prefix = "receipt") => {
   const baseFilename = `${prefix}_${militaryNumber}.pdf`;
   const baseFilepath = path.join(directory, baseFilename);
   
-  if (!fs.existsSync(baseFilepath)) {
-    return { filename: baseFilename, filepath: baseFilepath };
-  }
+  if (!fs.existsSync(baseFilepath)) return { filename: baseFilename, filepath: baseFilepath };
   
   let counter = 2;
   while (true) {
     const filename = `${prefix}_${militaryNumber}_${counter}.pdf`;
     const filepath = path.join(directory, filename);
-    
-    if (!fs.existsSync(filepath)) {
-      return { filename, filepath };
-    }
+    if (!fs.existsSync(filepath)) return { filename, filepath };
     counter++;
   }
 };
 
-// ✅ دالة إنشاء PDF مع دعم كامل للعربية
+// ================== دالة تنظيف Base64 ==================
+const cleanBase64 = (data) => {
+  if (!data) return null;
+  return data.replace(/^data:image\/\w+;base64,/, "");
+};
+
+// ================== إنشاء PDF ==================
 const generateReceiptPDF = async (receipt) => {
-  return new Promise(async (resolve, reject) => {
+  return new Promise((resolve, reject) => {
     try {
       const receiptsDir = path.join(__dirname, "../receipts");
       if (!fs.existsSync(receiptsDir)) fs.mkdirSync(receiptsDir, { recursive: true });
@@ -67,12 +68,6 @@ const generateReceiptPDF = async (receipt) => {
         ]);
       });
 
-      // ================== التواقيع ==================
-      const cleanBase64 = (data) => {
-        if (!data) return null;
-        return data.replace(/^data:image\/\w+;base64,/, "");
-      };
-
       const receiverSignature = receipt.receiver.signature
         ? { image: `data:image/png;base64,${cleanBase64(receipt.receiver.signature)}`, width: 100, height: 50, alignment: "center" }
         : { text: "", alignment: "center" };
@@ -102,7 +97,7 @@ const generateReceiptPDF = async (receipt) => {
             },
             margin: [0, 10, 0, 20]
           },
-          { text: " المذكورة أعلاه المواد كافة استلمت بأنني أدناه الموقع أنا أقر", alignment: "center", margin: [0, 0, 0, 40] },
+          { text: "المذكورة أعلاه المواد كافة استلمت بأنني أدناه الموقع أنا أقر", alignment: "center", margin: [0, 0, 0, 40] },
           {
             columns: [
               {
@@ -141,59 +136,37 @@ const generateReceiptPDF = async (receipt) => {
   });
 };
 
-// ================== إضافة سند جديد مع Cloudinary ==================
+// ================== إضافة سند ==================
 const post_add_receipt = async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
-
   try {
     const { receiver, items, receiverSignature } = req.body;
-
     if (!receiver || !items || !receiverSignature) {
       await session.abortTransaction();
       session.endSession();
       return res.status(400).json({ message: "البيانات المطلوبة ناقصة" });
     }
 
-    // رفع توقيع المستلم إلى Cloudinary
-    let receiverSignatureUrl = "";
-    if (receiverSignature) {
-      const uploadResponse = await cloudinary.uploader.upload(
-        `data:image/png;base64,${receiverSignature}`,
-        { folder: "receipts/signatures" }
-      );
-      receiverSignatureUrl = uploadResponse.secure_url;
-    }
+    // رفع توقيع المستلم
+    const receiverSignatureUrl = (receiverSignature) 
+      ? (await cloudinary.uploader.upload(`data:image/png;base64,${receiverSignature}`, { folder: "receipts/signatures" })).secure_url
+      : "";
 
     // رفع توقيع المدير
     let managerSignatureUrl = "";
     const managerFilePath = path.join(__dirname, "../s.png");
     if (fs.existsSync(managerFilePath)) {
-      const uploadManager = await cloudinary.uploader.upload(managerFilePath, {
-        folder: "receipts/manager"
-      });
-      managerSignatureUrl = uploadManager.secure_url;
+      managerSignatureUrl = (await cloudinary.uploader.upload(managerFilePath, { folder: "receipts/manager" })).secure_url;
     }
 
     const itemsDetails = [];
     const itemsToDelete = [];
 
-    for (let i = 0; i < items.length; i++) {
-      const itemData = items[i];
+    for (const itemData of items) {
       const item = await Storge.findById(itemData.item).session(session);
-      if (!item) {
-        await session.abortTransaction();
-        session.endSession();
-        return res.status(404).json({ message: `المادة غير موجودة` });
-      }
-
-      if (item.qin < itemData.quantity) {
-        await session.abortTransaction();
-        session.endSession();
-        return res.status(400).json({ 
-          message: `الكمية في المخزون غير كافية للمادة: ${item.itemName}` 
-        });
-      }
+      if (!item) throw new Error(`المادة غير موجودة: ${itemData.item}`);
+      if (item.qin < itemData.quantity) throw new Error(`الكمية غير كافية للمادة: ${item.itemName}`);
 
       item.qin -= itemData.quantity;
       if (item.qin === 0) itemsToDelete.push(item._id);
@@ -208,9 +181,7 @@ const post_add_receipt = async (req, res) => {
       });
     }
 
-    if (itemsToDelete.length > 0) {
-      await Storge.deleteMany({ _id: { $in: itemsToDelete } }).session(session);
-    }
+    if (itemsToDelete.length) await Storge.deleteMany({ _id: { $in: itemsToDelete } }).session(session);
 
     const receipt = new Receipt({
       type: "استلام",
@@ -241,6 +212,7 @@ const post_add_receipt = async (req, res) => {
   }
 };
 
+// ================== استعلامات السندات ==================
 const get_all_receipts = async (req, res) => {
   try {
     const receipts = await Receipt.find({}).sort({ createdAt: -1 });
