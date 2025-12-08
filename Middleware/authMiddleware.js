@@ -16,7 +16,7 @@ const authMiddleware = (req, res, next) => {
     // التحقق من Token
     const decoded = jwt.verify(
       token, 
-      process.env.JWT_SECRET || "your-secret-key-change-this"
+      process.env.JWT_SECRET 
     );
 
     // إضافة بيانات المستخدم إلى الـ request
