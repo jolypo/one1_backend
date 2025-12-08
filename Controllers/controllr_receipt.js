@@ -8,46 +8,25 @@ const Receipt = require("../models/receipt");
 const Storge = require("../models/stroge");
 const cloudinary = require("./cloudinary");
 
-// ================== دالة للحصول على اسم ملف فريد ==================
-const getUniqueFilename = (directory, militaryNumber, prefix = "receipt") => {
-  const baseFilename = `${prefix}_${militaryNumber}.pdf`;
-  const baseFilepath = path.join(directory, baseFilename);
-  
-  if (!fs.existsSync(baseFilepath)) return { filename: baseFilename, filepath: baseFilepath };
-  
-  let counter = 2;
-  while (true) {
-    const filename = `${prefix}_${militaryNumber}_${counter}.pdf`;
-    const filepath = path.join(directory, filename);
-    if (!fs.existsSync(filepath)) return { filename, filepath };
-    counter++;
-  }
-};
-
 // ================== دالة تنظيف Base64 ==================
 const cleanBase64 = (data) => {
   if (!data) return null;
   return data.replace(/^data:image\/\w+;base64,/, "");
 };
 
-// ================== إنشاء PDF ==================
+// ================== إنشاء PDF ورفع على Cloudinary ==================
 const generateReceiptPDF = async (receipt) => {
   return new Promise((resolve, reject) => {
     try {
-      const receiptsDir = path.join(__dirname, "../receipts");
-      if (!fs.existsSync(receiptsDir)) fs.mkdirSync(receiptsDir, { recursive: true });
-
-      const { filename, filepath } = getUniqueFilename(receiptsDir, receipt.receiver.number, "receipt");
-
       const fonts = {
         Cairo: {
           normal: path.join(__dirname, "../fonts/Cairo-Regular.ttf"),
           bold: path.join(__dirname, "../fonts/Cairo-Bold.ttf")
         }
       };
-
       const printer = new PdfPrinter(fonts);
 
+      // جدول المواد
       const itemsTable = [
         [
           { text: "الكمية", bold: true, alignment: "center", fillColor: "#255aeb", color: "white" },
@@ -68,6 +47,7 @@ const generateReceiptPDF = async (receipt) => {
         ]);
       });
 
+      // التوقيعات داخل المستند فقط
       const receiverSignature = receipt.receiver.signature
         ? { image: `data:image/png;base64,${cleanBase64(receipt.receiver.signature)}`, width: 100, height: 50, alignment: "center" }
         : { text: "", alignment: "center" };
@@ -122,13 +102,30 @@ const generateReceiptPDF = async (receipt) => {
         ]
       };
 
+      // إنشاء PDF في الذاكرة
+      const chunks = [];
       const pdfDoc = printer.createPdfKitDocument(docDefinition);
-      const stream = fs.createWriteStream(filepath);
-      pdfDoc.pipe(stream);
-      pdfDoc.end();
 
-      stream.on("finish", () => resolve({ success: true, filepath, filename }));
-      stream.on("error", (err) => reject(err));
+      pdfDoc.on('data', chunk => chunks.push(chunk));
+      pdfDoc.on('end', async () => {
+        try {
+          const pdfBuffer = Buffer.concat(chunks);
+
+          // رفع PDF إلى Cloudinary
+          const upload = cloudinary.uploader.upload_stream(
+            { resource_type: "raw", folder: "receipts/pdf" },
+            (error, result) => {
+              if (error) return reject(error);
+              resolve({ url: result.secure_url, public_id: result.public_id });
+            }
+          );
+          upload.end(pdfBuffer);
+        } catch (err) {
+          reject(err);
+        }
+      });
+
+      pdfDoc.end();
 
     } catch (err) {
       reject(err);
@@ -141,23 +138,11 @@ const post_add_receipt = async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
   try {
-    const { receiver, items, receiverSignature } = req.body;
+    const { receiver, items, receiverSignature, managerSignature } = req.body;
     if (!receiver || !items || !receiverSignature) {
       await session.abortTransaction();
       session.endSession();
       return res.status(400).json({ message: "البيانات المطلوبة ناقصة" });
-    }
-
-    // رفع توقيع المستلم
-    const receiverSignatureUrl = (receiverSignature) 
-      ? (await cloudinary.uploader.upload(`data:image/png;base64,${receiverSignature}`, { folder: "receipts/signatures" })).secure_url
-      : "";
-
-    // رفع توقيع المدير
-    let managerSignatureUrl = "";
-    const managerFilePath = path.join(__dirname, "../s.png");
-    if (fs.existsSync(managerFilePath)) {
-      managerSignatureUrl = (await cloudinary.uploader.upload(managerFilePath, { folder: "receipts/manager" })).secure_url;
     }
 
     const itemsDetails = [];
@@ -185,8 +170,8 @@ const post_add_receipt = async (req, res) => {
 
     const receipt = new Receipt({
       type: "استلام",
-      receiver: { ...receiver, signature: receiverSignatureUrl },
-      managerSignature: managerSignatureUrl,
+      receiver: { ...receiver, signature: receiverSignature }, // هنا التوقيع يبقى Base64 داخل المستند
+      managerSignature: managerSignature || null,          // نفس الشيء للتوقيع المدير
       items: itemsDetails
     });
 
@@ -194,13 +179,13 @@ const post_add_receipt = async (req, res) => {
     await session.commitTransaction();
     session.endSession();
 
+    // توليد PDF ورفعه على Cloudinary
     const pdfResult = await generateReceiptPDF(receipt);
 
-    res.status(201).json({ 
-      message: "تم إضافة السند بنجاح", 
+    res.status(201).json({
+      message: "تم إضافة السند بنجاح",
       receiptId: receipt._id,
-      pdfUrl: `/receipts/${pdfResult.filename}`,
-      pdfFileName: pdfResult.filename,
+      pdfUrl: pdfResult.url,
       itemsDeleted: itemsToDelete.length
     });
 
@@ -212,7 +197,6 @@ const post_add_receipt = async (req, res) => {
   }
 };
 
-// ================== استعلامات السندات ==================
 const get_all_receipts = async (req, res) => {
   try {
     const receipts = await Receipt.find({}).sort({ createdAt: -1 });
@@ -234,20 +218,8 @@ const get_receipt_by_id = async (req, res) => {
   }
 };
 
-const download_receipt_pdf = async (req, res) => {
-  try {
-    const { filename } = req.params;
-    const filepath = path.join(__dirname, "../receipts", filename);
-    if (!fs.existsSync(filepath)) return res.status(404).json({ message: "الملف غير موجود" });
-    res.download(filepath);
-  } catch (err) {
-    res.status(500).json({ message: "حدث خطأ" });
-  }
-};
-
 module.exports = { 
   post_add_receipt, 
   get_all_receipts, 
-  get_receipt_by_id,
-  download_receipt_pdf 
+  get_receipt_by_id
 };
