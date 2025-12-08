@@ -17,7 +17,6 @@ const {
   post_add_receipt, 
   get_all_receipts, 
   get_receipt_by_id,
-  download_receipt_pdf 
 } = require("../Controllers/controllr_receipt");
 
 const { login } = require("../Controllers/controllr_auth");
@@ -64,7 +63,6 @@ router.get("/storge/search-public", authMiddleware,adminMiddleware, searchItemPu
 // ============================================
 router.post("/receipts/add", authMiddleware, adminMiddleware, post_add_receipt);
 router.get("/receipts/all", authMiddleware, adminMiddleware, get_all_receipts);
-router.get("/receipts/download/:filename", authMiddleware, download_receipt_pdf);
 router.get("/receipts/:id", authMiddleware, adminMiddleware, get_receipt_by_id);
 
 module.exports = router;
