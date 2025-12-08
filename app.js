@@ -49,16 +49,20 @@ app.get("/", (req, res) => {
   });
 });
 
-// ✅ الاتصال بقاعدة البيانات (تجاوز إذا لم يكن هناك URI أو عند فشل الاتصال)
+// ✅ الاتصال بقاعدة البيانات
 if (process.env.MONGO_URI && process.env.MONGO_URI.trim() !== "") {
-  mongoose.connect(process.env.MONGO_URI )
-    .then(() => {
+  mongoose.connect(process.env.MONGO_URI)
+    .then(async () => {
       console.log("✅ MongoDB connected");
+      
+      // 🌱 إنشاء Admin تلقائياً عند أول تشغيل
+      await createDefaultAdmin();
+      
       startServer();
     })
     .catch((err) => {
-      console.error("❌ MongoDB connection error (skipped for now):", err);
-      startServer(); // نتابع تشغيل السيرفر حتى لو فشل الاتصال
+      console.error("❌ MongoDB connection error:", err);
+      startServer();
     });
 
   mongoose.connection.on('error', (err) => {
@@ -71,6 +75,50 @@ if (process.env.MONGO_URI && process.env.MONGO_URI.trim() !== "") {
 } else {
   console.log("⚠️ MongoDB connection skipped (no URI provided).");
   startServer();
+}
+
+// ============================================
+// 🌱 دالة إنشاء Admin الافتراضي
+// ============================================
+async function createDefaultAdmin() {
+  try {
+    const User = require("./models/User");
+    const bcrypt = require("bcrypt");
+
+    // التحقق من وجود مستخدم Admin
+    const adminExists = await User.findOne({ email: "admin@system.com" });
+    
+    if (adminExists) {
+      console.log("✅ مستخدم Admin موجود مسبقاً");
+      return;
+    }
+
+    // تشفير كلمة المرور
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash("Admin@123", salt);
+
+    // إنشاء المستخدم
+    const admin = await User.create({
+      username: "Administrator",
+      email: "admin@system.com",
+      password: hashedPassword,
+      role: "admin"
+    });
+
+    console.log("\n" + "=".repeat(60));
+    console.log("🎉 تم إنشاء مستخدم Admin الافتراضي بنجاح!");
+    console.log("=".repeat(60));
+    console.log("📧 Email: admin@system.com");
+    console.log("🔑 Password: Admin@123");
+    console.log("👤 Role: admin");
+    console.log("🆔 ID:", admin._id);
+    console.log("=".repeat(60));
+    console.log("⚠️  يُنصح بتغيير كلمة المرور بعد أول تسجيل دخول");
+    console.log("=".repeat(60) + "\n");
+
+  } catch (error) {
+    console.error("❌ خطأ في إنشاء مستخدم Admin:", error.message);
+  }
 }
 
 // ✅ بدء السيرفر
