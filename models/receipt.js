@@ -14,21 +14,24 @@ const receiptSchema = new Schema({
     number: { type: String, required: true },
     signature: { type: String }, // توقيع المستلم من Canvas
   },
-  giver: {}, // المسلم بدون بيانات
-  managerSignature: "https://res.cloudinary.com/de0pulmmw/image/upload/v1765173955/s_rylte8.png", // الرابط الثابت
+  giver: {}, // بيانات المسلم (يمكن تركها فارغة)
+  managerSignature: { 
+    type: String, 
+    required: false, 
+    default: "https://res.cloudinary.com/de0pulmmw/image/upload/v1765173955/s_rylte8.png" 
+  }, // الرابط الثابت
   items: [ // المواد المستلمة/المسلمة
     {
       item: { 
         type: Schema.Types.ObjectId, 
         ref: 'Storge', 
-        required: false  // ✅ ✅ ✅ غيّر من true إلى false
+        required: false
       },
       itemName: { type: String, required: true },
       itemNumber: { type: String, required: true },
       itemType: { type: String, required: true },
       quantity: { type: Number, required: true },
     }
-    
   ],
   verified: { type: Boolean, default: false }, // مربع تحقق
   date: { type: Date, default: Date.now },
