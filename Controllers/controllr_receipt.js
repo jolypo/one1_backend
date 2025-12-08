@@ -6,7 +6,7 @@ const PdfPrinter = require("pdfmake");
 
 const Receipt = require("../models/receipt"); 
 const Storge = require("../models/stroge");
-const cloudinary = require("../config/cloudinary"); // ✅ إعداد Cloudinary
+const cloudinary = require("./cloudinary");
 
 // ✅ دالة للحصول على اسم ملف فريد مع عداد
 const getUniqueFilename = (directory, militaryNumber, prefix = "receipt") => {
