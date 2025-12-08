@@ -51,7 +51,7 @@ app.get("/", (req, res) => {
 
 // ✅ الاتصال بقاعدة البيانات (تجاوز إذا لم يكن هناك URI أو عند فشل الاتصال)
 if (process.env.MONGO_URI && process.env.MONGO_URI.trim() !== "") {
-  mongoose.connect(process.env.MONGO_URI + "&directConnection=true")
+  mongoose.connect(process.env.MONGO_URI )
     .then(() => {
       console.log("✅ MongoDB connected");
       startServer();
