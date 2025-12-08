@@ -15,7 +15,7 @@ const receiptSchema = new Schema({
     signature: { type: String }, // توقيع المستلم من Canvas
   },
   giver: {}, // المسلم بدون بيانات
-  managerSignature: { type: String, required: true }, // توقيع المدير من ملف ثابت
+  managerSignature: "https://res.cloudinary.com/de0pulmmw/image/upload/v1765173955/s_rylte8.png", // الرابط الثابت
   items: [ // المواد المستلمة/المسلمة
     {
       item: { 
