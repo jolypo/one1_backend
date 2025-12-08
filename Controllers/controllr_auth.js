@@ -26,7 +26,7 @@ const login = async (req, res) => {
     }
 
     // التحقق من كلمة المرور
-    const isPasswordValid = await bcrypt.compare(password, user.password);
+   const isPasswordValid = password === user.password;
     
     if (!isPasswordValid) {
       return res.status(401).json({ 
