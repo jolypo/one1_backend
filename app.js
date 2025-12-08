@@ -11,24 +11,34 @@ const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
 
 const allrouter = require("./Routes/allrouter");
 
+// ============================
 // ✅ CORS - السماح للفرونت بالتواصل
+// ============================
 app.use(cors({
   origin: FRONTEND_URL,
   credentials: true
 }));
 
+// ============================
 // ✅ قراءة JSON
+// ============================
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
+// ============================
 // ✅ خدمة ملفات PDF
+// ============================
 app.use('/receipts', express.static(path.join(__dirname, 'receipts')));
 app.use('/delivery', express.static(path.join(__dirname, 'delivery')));
 
+// ============================
 // ✅ Routes
+// ============================
 app.use("/routes", allrouter);
 
+// ============================
 // ✅ الصفحة الرئيسية
+// ============================
 app.get("/", (req, res) => {
   res.json({ 
     message: "✅ السيرفر يعمل بنجاح",
@@ -49,15 +59,13 @@ app.get("/", (req, res) => {
   });
 });
 
+// ============================
 // ✅ الاتصال بقاعدة البيانات
+// ============================
 if (process.env.MONGO_URI && process.env.MONGO_URI.trim() !== "") {
   mongoose.connect(process.env.MONGO_URI)
-    .then(async () => {
+    .then(() => {
       console.log("✅ MongoDB connected");
-      
-      // 🌱 إنشاء Admin تلقائياً عند أول تشغيل
-      await createDefaultAdmin();
-      
       startServer();
     })
     .catch((err) => {
@@ -77,51 +85,9 @@ if (process.env.MONGO_URI && process.env.MONGO_URI.trim() !== "") {
   startServer();
 }
 
-// ============================================
-// 🌱 دالة إنشاء Admin الافتراضي
-// ============================================
-async function createDefaultAdmin() {
-  try {
-    const User = require("./models/User");
-    const bcrypt = require("bcrypt");
-
-    // التحقق من وجود مستخدم Admin
-    const adminExists = await User.findOne({ email: "admin@system.com" });
-    
-    if (adminExists) {
-      console.log("✅ مستخدم Admin موجود مسبقاً");
-      return;
-    }
-
-    // تشفير كلمة المرور
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash("Admin@123", salt);
-
-    // إنشاء المستخدم
-    const admin = await User.create({
-      username: "Administrator",
-      email: "admin@system.com",
-    password: "Admin@123",
-      role: "admin"
-    });
-
-    console.log("\n" + "=".repeat(60));
-    console.log("🎉 تم إنشاء مستخدم Admin الافتراضي بنجاح!");
-    console.log("=".repeat(60));
-    console.log("📧 Email: admin@system.com");
-    console.log("🔑 Password: Admin@123");
-    console.log("👤 Role: admin");
-    console.log("🆔 ID:", admin._id);
-    console.log("=".repeat(60));
-    console.log("⚠️  يُنصح بتغيير كلمة المرور بعد أول تسجيل دخول");
-    console.log("=".repeat(60) + "\n");
-
-  } catch (error) {
-    console.error("❌ خطأ في إنشاء مستخدم Admin:", error.message);
-  }
-}
-
+// ============================
 // ✅ بدء السيرفر
+// ============================
 function startServer() {
   app.listen(PORT, () => {
     console.log("\n" + "=".repeat(60));
@@ -145,7 +111,9 @@ function startServer() {
   });
 }
 
+// ============================
 // ✅ معالجة إيقاف التطبيق
+// ============================
 process.on('SIGINT', async () => {
   if (mongoose.connection.readyState) await mongoose.connection.close();
   console.log('\n👋 تم إيقاف الاتصال بقاعدة البيانات');
