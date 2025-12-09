@@ -1,26 +1,18 @@
-// models/Receipt.js
-const mongoose = require("mongoose");
-const Schema = mongoose.Schema;
-
 const receiptSchema = new Schema({
   type: { 
     type: String, 
     enum: ['استلام', 'تسليم'], 
     required: true 
   },
-  receiver: { // بيانات المستلم يدوياً
+  receiver: {
     name: { type: String, required: true },
     rank: { type: String, required: true },
     number: { type: String, required: true },
-    signature: { type: String }, // توقيع المستلم من Canvas
+    signature: { type: String },
   },
-  giver: {}, // بيانات المسلم (يمكن تركها فارغة)
-  managerSignature: { 
-    type: String, 
-    required: false, 
-    default: "https://res.cloudinary.com/de0pulmmw/image/upload/v1765173955/s_rylte8.png" 
-  }, // الرابط الثابت
-  items: [ // المواد المستلمة/المسلمة
+  giver: {},
+  managerSignature: { type: String, required: true },
+  items: [
     {
       item: { 
         type: Schema.Types.ObjectId, 
@@ -33,7 +25,9 @@ const receiptSchema = new Schema({
       quantity: { type: Number, required: true },
     }
   ],
-  verified: { type: Boolean, default: false }, // مربع تحقق
+  pdfUrl: { type: String }, // ✅ أضف هذا الحقل
+  pdfPublicId: { type: String }, // ✅ لحذف الملف لاحقاً
+  verified: { type: Boolean, default: false },
   date: { type: Date, default: Date.now },
 }, { timestamps: true });
 
