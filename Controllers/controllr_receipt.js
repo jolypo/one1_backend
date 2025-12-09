@@ -6,7 +6,7 @@ const PdfPrinter = require("pdfmake");
 
 const Receipt = require("../models/receipt"); 
 const Storge = require("../models/stroge");
-const cloudinary = require("./cloudinary");
+const cloudinary = require("./cloudinary"); // تأكد من ضبط utils/cloudinary.js
 
 // ================== دالة تنظيف Base64 ==================
 const cleanBase64 = (data) => {
@@ -47,7 +47,7 @@ const generateReceiptPDF = async (receipt) => {
         ]);
       });
 
-      // التوقيعات داخل المستند فقط
+      // التوقيعات داخل المستند
       const receiverSignature = receipt.receiver.signature
         ? { image: `data:image/png;base64,${cleanBase64(receipt.receiver.signature)}`, width: 100, height: 50, alignment: "center" }
         : { text: "", alignment: "center" };
@@ -172,17 +172,17 @@ const post_add_receipt = async (req, res) => {
       await Storge.deleteMany({ _id: { $in: itemsToDelete } }).session(session);
     }
 
-    // ✅ أهم تعديل — ضمان وجود توقيع المدير دائماً
+    // ضمان وجود توقيع المدير دائماً
     const finalManagerSignature =
       managerSignature && managerSignature.trim() !== ""
         ? managerSignature
         : "https://res.cloudinary.com/de0pulmmw/image/upload/v1765173955/s_rylte8.png";
 
-    // ✅ إنشاء السند بدون PDF أولاً
+    // إنشاء السند
     const receipt = new Receipt({
       type: "استلام",
       receiver: { ...receiver, signature: receiverSignature },
-      managerSignature: finalManagerSignature,   // ← التعديل هنا فقط
+      managerSignature: finalManagerSignature,
       items: itemsDetails
     });
 
@@ -191,13 +191,9 @@ const post_add_receipt = async (req, res) => {
     // إنشاء PDF ورفعه
     try {
       const pdfResult = await generateReceiptPDF(receipt);
-      
       receipt.pdfUrl = pdfResult.url;
       receipt.pdfPublicId = pdfResult.public_id;
       await receipt.save({ session });
-      
-      console.log("✅ تم حفظ رابط PDF:", pdfResult.url);
-      
     } catch (pdfErr) {
       console.error("❌ خطأ في إنشاء PDF:", pdfErr);
     }
@@ -223,6 +219,7 @@ const post_add_receipt = async (req, res) => {
   }
 };
 
+// ================== جلب جميع السندات ==================
 const get_all_receipts = async (req, res) => {
   try {
     const receipts = await Receipt.find({}).sort({ createdAt: -1 });
@@ -232,6 +229,7 @@ const get_all_receipts = async (req, res) => {
   }
 };
 
+// ================== جلب سند حسب الـ ID ==================
 const get_receipt_by_id = async (req, res) => {
   try {
     const { id } = req.params;
