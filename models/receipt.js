@@ -1,3 +1,6 @@
+const mongoose = require("mongoose");
+const Schema = mongoose.Schema;
+
 const receiptSchema = new Schema({
   type: { 
     type: String, 
@@ -22,11 +25,11 @@ const receiptSchema = new Schema({
       itemName: { type: String, required: true },
       itemNumber: { type: String, required: true },
       itemType: { type: String, required: true },
-      quantity: { type: Number, required: true },
+      quantity: { type: Number, required: required: true },
     }
   ],
-  pdfUrl: { type: String }, // ✅ أضف هذا الحقل
-  pdfPublicId: { type: String }, // ✅ لحذف الملف لاحقاً
+  pdfUrl: { type: String },
+  pdfPublicId: { type: String },
   verified: { type: Boolean, default: false },
   date: { type: Date, default: Date.now },
 }, { timestamps: true });
