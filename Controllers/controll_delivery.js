@@ -3,7 +3,7 @@ const path = require("path");
 const mongoose = require("mongoose");
 const moment = require("moment");
 const PdfPrinter = require("pdfmake");
-const cloudinary = require("../utils/cloudinary"); // تأكد من إعداد Cloudinary
+const cloudinary = require("./cloudinary"); // تأكد من إعداد Cloudinary
 
 const Receipt = require("../models/receipt");
 const Storge = require("../models/stroge");
