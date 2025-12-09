@@ -25,7 +25,7 @@ const receiptSchema = new Schema({
       itemName: { type: String, required: true },
       itemNumber: { type: String, required: true },
       itemType: { type: String, required: true },
-      quantity: { type: Number, required: required: true },
+      quantity: { type: Number, required: true }, // ✅ هنا التعديل
     }
   ],
   pdfUrl: { type: String },
