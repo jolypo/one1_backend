@@ -186,10 +186,14 @@ const post_add_delivery = async (req, res) => {
       if (!itemData.materialName || !itemData.quantity || itemData.quantity <= 0) {
         await session.abortTransaction();
         session.endSession();
-        return res.status(400).json({ message: `البيانات غير صحيحة للمادة رقم ${i + 1}` });
+        return res.status(400).json({ 
+          message: `البيانات غير صحيحة للمادة رقم ${i + 1}` 
+        });
       }
 
-      const existingItem = await Storge.findOne({ itemNumber: itemData.materialNumber }).session(session);
+      const existingItem = await Storge.findOne({ 
+        itemNumber: itemData.materialNumber 
+      }).session(session);
 
       if (existingItem) {
         existingItem.qin += Number(itemData.quantity);
@@ -214,9 +218,9 @@ const post_add_delivery = async (req, res) => {
       });
     }
 
-    // توقيع المدير (يجب رفعه مسبقاً على Cloudinary)
     const managerSignature = process.env.MANAGER_SIGNATURE_URL || "";
 
+    // ✅ إنشاء السند
     const receipt = new Receipt({
       type: "تسليم",
       receiver: {
@@ -230,35 +234,41 @@ const post_add_delivery = async (req, res) => {
     });
 
     await receipt.save({ session });
+
+    // ✅ إنشاء PDF ورفعه
+    try {
+      const pdfResult = await generateDeliveryPDF(receipt);
+      
+      // ✅✅✅ تحديث السند بـ pdfUrl
+      receipt.pdfUrl = pdfResult.url;
+      receipt.pdfPublicId = pdfResult.public_id;
+      await receipt.save({ session });
+      
+      console.log("✅ تم حفظ رابط PDF في قاعدة البيانات:", pdfResult.url);
+      
+    } catch (pdfErr) {
+      console.error("❌ خطأ في إنشاء PDF:", pdfErr);
+    }
+
     await session.commitTransaction();
     session.endSession();
 
-    try {
-      const pdfResult = await generateDeliveryPDF(receipt);
-
-      res.status(201).json({
-        message: "تم إضافة السند وإرجاع المواد للمخزن بنجاح",
-        receiptId: receipt._id,
-        pdfUrl: pdfResult.url,
-        pdfPublicId: pdfResult.public_id
-      });
-    } catch (pdfErr) {
-      console.error("❌ خطأ في إنشاء PDF:", pdfErr);
-      res.status(201).json({
-        message: "تم إضافة السند لكن فشل رفع PDF",
-        receiptId: receipt._id,
-        error: pdfErr.message
-      });
-    }
+    res.status(201).json({
+      message: "تم إضافة السند وإرجاع المواد للمخزن بنجاح",
+      receiptId: receipt._id,
+      pdfUrl: receipt.pdfUrl // ✅ محفوظ في قاعدة البيانات
+    });
 
   } catch (err) {
     await session.abortTransaction();
     session.endSession();
     console.error("❌ خطأ في إضافة السند:", err);
-    res.status(500).json({ message: "حدث خطأ أثناء إضافة السند", error: err.message });
+    res.status(500).json({ 
+      message: "حدث خطأ أثناء إضافة السند", 
+      error: err.message 
+    });
   }
 };
-
 // ============================================
 // 📋 جلب جميع سندات التسليم
 // ============================================
