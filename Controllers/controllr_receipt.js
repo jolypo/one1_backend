@@ -172,31 +172,34 @@ const post_add_receipt = async (req, res) => {
       await Storge.deleteMany({ _id: { $in: itemsToDelete } }).session(session);
     }
 
+    // ✅ أهم تعديل — ضمان وجود توقيع المدير دائماً
+    const finalManagerSignature =
+      managerSignature && managerSignature.trim() !== ""
+        ? managerSignature
+        : "https://res.cloudinary.com/de0pulmmw/image/upload/v1765173955/s_rylte8.png";
+
     // ✅ إنشاء السند بدون PDF أولاً
     const receipt = new Receipt({
       type: "استلام",
       receiver: { ...receiver, signature: receiverSignature },
-      managerSignature: managerSignature || null,
+      managerSignature: finalManagerSignature,   // ← التعديل هنا فقط
       items: itemsDetails
-      // لا تضع pdfUrl هنا بعد
     });
 
     await receipt.save({ session });
     
-    // ✅ إنشاء PDF ورفعه
+    // إنشاء PDF ورفعه
     try {
       const pdfResult = await generateReceiptPDF(receipt);
       
-      // ✅✅✅ تحديث السند بـ pdfUrl (مهم جداً!)
       receipt.pdfUrl = pdfResult.url;
       receipt.pdfPublicId = pdfResult.public_id;
       await receipt.save({ session });
       
-      console.log("✅ تم حفظ رابط PDF في قاعدة البيانات:", pdfResult.url);
+      console.log("✅ تم حفظ رابط PDF:", pdfResult.url);
       
     } catch (pdfErr) {
       console.error("❌ خطأ في إنشاء PDF:", pdfErr);
-      // استمر في حفظ السند حتى لو فشل PDF
     }
 
     await session.commitTransaction();
@@ -205,7 +208,7 @@ const post_add_receipt = async (req, res) => {
     res.status(201).json({
       message: "تم إضافة السند بنجاح",
       receiptId: receipt._id,
-      pdfUrl: receipt.pdfUrl, // ✅ الآن محفوظ في قاعدة البيانات
+      pdfUrl: receipt.pdfUrl,
       itemsDeleted: itemsToDelete.length
     });
 
