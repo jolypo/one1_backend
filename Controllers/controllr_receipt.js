@@ -137,8 +137,10 @@ const generateReceiptPDF = async (receipt) => {
 const post_add_receipt = async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
+  
   try {
     const { receiver, items, receiverSignature, managerSignature } = req.body;
+    
     if (!receiver || !items || !receiverSignature) {
       await session.abortTransaction();
       session.endSession();
@@ -166,26 +168,44 @@ const post_add_receipt = async (req, res) => {
       });
     }
 
-    if (itemsToDelete.length) await Storge.deleteMany({ _id: { $in: itemsToDelete } }).session(session);
+    if (itemsToDelete.length) {
+      await Storge.deleteMany({ _id: { $in: itemsToDelete } }).session(session);
+    }
 
+    // ✅ إنشاء السند بدون PDF أولاً
     const receipt = new Receipt({
       type: "استلام",
-      receiver: { ...receiver, signature: receiverSignature }, // هنا التوقيع يبقى Base64 داخل المستند
-      managerSignature: managerSignature || null,          // نفس الشيء للتوقيع المدير
+      receiver: { ...receiver, signature: receiverSignature },
+      managerSignature: managerSignature || null,
       items: itemsDetails
+      // لا تضع pdfUrl هنا بعد
     });
 
     await receipt.save({ session });
+    
+    // ✅ إنشاء PDF ورفعه
+    try {
+      const pdfResult = await generateReceiptPDF(receipt);
+      
+      // ✅✅✅ تحديث السند بـ pdfUrl (مهم جداً!)
+      receipt.pdfUrl = pdfResult.url;
+      receipt.pdfPublicId = pdfResult.public_id;
+      await receipt.save({ session });
+      
+      console.log("✅ تم حفظ رابط PDF في قاعدة البيانات:", pdfResult.url);
+      
+    } catch (pdfErr) {
+      console.error("❌ خطأ في إنشاء PDF:", pdfErr);
+      // استمر في حفظ السند حتى لو فشل PDF
+    }
+
     await session.commitTransaction();
     session.endSession();
-
-    // توليد PDF ورفعه على Cloudinary
-    const pdfResult = await generateReceiptPDF(receipt);
 
     res.status(201).json({
       message: "تم إضافة السند بنجاح",
       receiptId: receipt._id,
-      pdfUrl: pdfResult.url,
+      pdfUrl: receipt.pdfUrl, // ✅ الآن محفوظ في قاعدة البيانات
       itemsDeleted: itemsToDelete.length
     });
 
@@ -193,7 +213,10 @@ const post_add_receipt = async (req, res) => {
     await session.abortTransaction();
     session.endSession();
     console.error("❌ خطأ أثناء إضافة السند:", err);
-    res.status(500).json({ message: "حدث خطأ أثناء إضافة السند", error: err.message });
+    res.status(500).json({ 
+      message: "حدث خطأ أثناء إضافة السند", 
+      error: err.message 
+    });
   }
 };
 
