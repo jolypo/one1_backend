@@ -14,7 +14,14 @@ const receiptSchema = new Schema({
     signature: { type: String },
   },
   giver: {},
-  managerSignature: { type: String, required: true },
+  
+  // ✅ تعديل بسيط بدون حذف — إضافة قيمة افتراضية
+  managerSignature: { 
+    type: String, 
+    required: true,
+    default: "https://res.cloudinary.com/de0pulmmw/image/upload/v1765173955/s_rylte8.png"
+  },
+
   items: [
     {
       item: { 
@@ -25,9 +32,10 @@ const receiptSchema = new Schema({
       itemName: { type: String, required: true },
       itemNumber: { type: String, required: true },
       itemType: { type: String, required: true },
-      quantity: { type: Number, required: true }, // ✅ هنا التعديل
+      quantity: { type: Number, required: true },
     }
   ],
+
   pdfUrl: { type: String },
   pdfPublicId: { type: String },
   verified: { type: Boolean, default: false },
