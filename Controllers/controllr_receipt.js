@@ -1,3 +1,5 @@
+require('dotenv').config();
+
 const fs = require("fs");
 const path = require("path");
 const mongoose = require("mongoose");
@@ -6,7 +8,7 @@ const PdfPrinter = require("pdfmake");
 
 const Receipt = require("../models/receipt"); 
 const Storge = require("../models/stroge");
-const cloudinary = require("./cloudinary"); // تأكد من ضبط utils/cloudinary.js
+const cloudinary = require("./cloudinary"); // يجب أن يكون utils/cloudinary.js مضبوط
 
 // ================== دالة تنظيف Base64 ==================
 const cleanBase64 = (data) => {
@@ -176,7 +178,7 @@ const post_add_receipt = async (req, res) => {
     const finalManagerSignature =
       managerSignature && managerSignature.trim() !== ""
         ? managerSignature
-        : "https://res.cloudinary.com/de0pulmmw/image/upload/v1765173955/s_rylte8.png";
+        : "https://res.cloudinary.com/ONE/image/upload/v1765173955/s_rylte8.png";
 
     // إنشاء السند
     const receipt = new Receipt({
