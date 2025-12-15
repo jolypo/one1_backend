@@ -248,24 +248,17 @@ const post_add_receipt = async (req, res) => {
 
     // إنشاء PDF ورفعه
     try {
-      const pdfResult = await generateReceiptPDF(receipt);
-      receipt.pdfUrl = pdfResult.url;       // الرابط المباشر من Cloudinary
-      receipt.pdfPublicId = pdfResult.public_id;
-      await receipt.save({ session });
-      console.log("✅ تم رفع PDF بنجاح:", pdfResult.url);
-    } catch (pdfErr) {
-      console.error("❌ خطأ في إنشاء PDF:", pdfErr);
-    }
+    const pdfResult = await generateReceiptPDF(receipt);
+receipt.pdfUrl = pdfResult.url;       // رابط مباشر عام
+receipt.pdfPublicId = pdfResult.public_id;
+await receipt.save({ session });
 
-    await session.commitTransaction();
-    session.endSession();
+res.status(201).json({
+  message: "تم إضافة السند بنجاح",
+  receiptId: receipt._id,
+  pdfUrl: receipt.pdfUrl  // استخدم هذا الرابط مباشرة في Frontend
+});
 
-    // إرسال الرابط المباشر للـ frontend
-    res.status(201).json({
-      message: "تم إضافة السند بنجاح",
-      receiptId: receipt._id,
-      pdfUrl: receipt.pdfUrl
-    });
 
   } catch (err) {
     await session.abortTransaction();
