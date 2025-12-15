@@ -8,15 +8,29 @@ const PdfPrinter = require("pdfmake");
 
 const Receipt = require("../models/receipt"); 
 const Storge = require("../models/stroge");
-const cloudinary = require("./cloudinary"); // يجب أن يكون utils/cloudinary.js مضبوط
+const cloudinary = require("../utils/cloudinary");
 
-// ================== دالة تنظيف Base64 ==================
+// ================== تنظيف Base64 ==================
 const cleanBase64 = (data) => {
   if (!data) return null;
   return data.replace(/^data:image\/\w+;base64,/, "");
 };
 
-// ================== إنشاء PDF ورفع على Cloudinary ==================
+// ================== رفع PDF إلى Cloudinary ==================
+const uploadPDFtoCloudinary = async (buffer, folder = "receipts") => {
+  return new Promise((resolve, reject) => {
+    const uploadStream = cloudinary.uploader.upload_stream(
+      { resource_type: "raw", folder, format: "pdf" },
+      (error, result) => {
+        if (error) return reject(error);
+        resolve({ url: result.secure_url, public_id: result.public_id });
+      }
+    );
+    uploadStream.end(buffer);
+  });
+};
+
+// ================== إنشاء PDF ==================
 const generateReceiptPDF = async (receipt) => {
   return new Promise((resolve, reject) => {
     try {
@@ -31,32 +45,32 @@ const generateReceiptPDF = async (receipt) => {
       // جدول المواد
       const itemsTable = [
         [
-          { text: "الكمية", bold: true, alignment: "center", fillColor: "#255aeb", color: "white" },
-          { text: "المادة رقم", bold: true, alignment: "center", fillColor: "#255aeb", color: "white" },
-          { text: "المادة", bold: true, alignment: "center", fillColor: "#255aeb", color: "white" },
-          { text: "النوع", bold: true, alignment: "center", fillColor: "#255aeb", color: "white" },
-          { text: "عدد", bold: true, alignment: "center", fillColor: "#255aeb", color: "white" }
+          { text: "#", bold: true, alignment: "center", fillColor: "#255aeb", color: "white" },
+          { text: "اسم المادة", bold: true, alignment: "center", fillColor: "#255aeb", color: "white" },
+          { text: "نوع المادة", bold: true, alignment: "center", fillColor: "#255aeb", color: "white" },
+          { text: "رقم المادة", bold: true, alignment: "center", fillColor: "#255aeb", color: "white" },
+          { text: "الكمية", bold: true, alignment: "center", fillColor: "#255aeb", color: "white" }
         ]
       ];
 
       receipt.items.forEach((item, index) => {
         itemsTable.push([
-          { text: item.quantity.toString(), alignment: "center" },
-          { text: item.itemNumber || "", alignment: "center" },
+          { text: (index + 1).toString(), alignment: "center" },
           { text: item.itemName || "", alignment: "center" },
           { text: item.itemType || "", alignment: "center" },
-          { text: (index + 1).toString(), alignment: "center" }
+          { text: item.itemNumber || "", alignment: "center" },
+          { text: item.quantity.toString(), alignment: "center" }
         ]);
       });
 
-      // التوقيعات داخل المستند
+      // التواقيع
       const receiverSignature = receipt.receiver.signature
         ? { image: `data:image/png;base64,${cleanBase64(receipt.receiver.signature)}`, width: 100, height: 50, alignment: "center" }
-        : { text: "", alignment: "center" };
+        : { text: "لا يوجد توقيع", alignment: "center", color: "gray" };
 
       const managerSignature = receipt.managerSignature
-        ? { image: `data:image/png;base64,${cleanBase64(receipt.managerSignature)}`, width: 100, height: 50, alignment: "center" }
-        : { text: "", alignment: "center" };
+        ? { image: receipt.managerSignature, width: 100, height: 50, alignment: "center" }
+        : { text: "لا يوجد توقيع", alignment: "center", color: "gray" };
 
       const docDefinition = {
         pageSize: "A4",
@@ -65,7 +79,7 @@ const generateReceiptPDF = async (receipt) => {
         content: [
           {
             columns: [
-              { text: `تاريخ ${moment(receipt.date).format("YYYY/MM/DD")}`, alignment: "right", width: "*" },
+              { text: `التاريخ: ${moment(receipt.date).format("YYYY/MM/DD")}`, alignment: "right", width: "*" },
               { text: "®", alignment: "left", fontSize: 40, width: "auto" }
             ]
           },
@@ -79,7 +93,7 @@ const generateReceiptPDF = async (receipt) => {
             },
             margin: [0, 10, 0, 20]
           },
-          { text: "المذكورة أعلاه المواد كافة استلمت بأنني أدناه الموقع أنا أقر", alignment: "center", margin: [0, 0, 0, 40] },
+          { text: "أقر أنا الموقع أدناه بأنني استلمت كافة المواد المذكورة أعلاه", alignment: "center", margin: [0, 0, 0, 40] },
           {
             columns: [
               {
@@ -104,29 +118,20 @@ const generateReceiptPDF = async (receipt) => {
         ]
       };
 
-      // إنشاء PDF في الذاكرة
-      const chunks = [];
       const pdfDoc = printer.createPdfKitDocument(docDefinition);
-
+      const chunks = [];
+      
       pdfDoc.on('data', chunk => chunks.push(chunk));
       pdfDoc.on('end', async () => {
         try {
           const pdfBuffer = Buffer.concat(chunks);
-
-          // رفع PDF إلى Cloudinary
-          const upload = cloudinary.uploader.upload_stream(
-            { resource_type: "raw", folder: "receipts/pdf" },
-            (error, result) => {
-              if (error) return reject(error);
-              resolve({ url: result.secure_url, public_id: result.public_id });
-            }
-          );
-          upload.end(pdfBuffer);
+          const uploaded = await uploadPDFtoCloudinary(pdfBuffer, "receipts");
+          resolve(uploaded);
         } catch (err) {
           reject(err);
         }
       });
-
+      
       pdfDoc.end();
 
     } catch (err) {
@@ -135,7 +140,7 @@ const generateReceiptPDF = async (receipt) => {
   });
 };
 
-// ================== إضافة سند ==================
+// ================== إضافة سند استلام ==================
 const post_add_receipt = async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
@@ -149,17 +154,49 @@ const post_add_receipt = async (req, res) => {
       return res.status(400).json({ message: "البيانات المطلوبة ناقصة" });
     }
 
-    const itemsDetails = [];
-    const itemsToDelete = [];
+    if (!receiver.name || !receiver.rank || !receiver.number) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(400).json({ message: "بيانات المستلم غير مكتملة" });
+    }
 
-    for (const itemData of items) {
+    if (!Array.isArray(items) || items.length === 0) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(400).json({ message: "يجب إضافة مادة واحدة على الأقل" });
+    }
+
+    const itemsDetails = [];
+
+    for (let i = 0; i < items.length; i++) {
+      const itemData = items[i];
+
+      if (!itemData.item || !itemData.quantity || itemData.quantity <= 0) {
+        await session.abortTransaction();
+        session.endSession();
+        return res.status(400).json({ 
+          message: `البيانات غير صحيحة للمادة رقم ${i + 1}` 
+        });
+      }
+
       const item = await Storge.findById(itemData.item).session(session);
-      if (!item) throw new Error(`المادة غير موجودة: ${itemData.item}`);
-      if (item.qin < itemData.quantity) throw new Error(`الكمية غير كافية للمادة: ${item.itemName}`);
+      
+      if (!item) {
+        await session.abortTransaction();
+        session.endSession();
+        return res.status(404).json({ message: `المادة غير موجودة` });
+      }
+
+      if (item.qin < itemData.quantity) {
+        await session.abortTransaction();
+        session.endSession();
+        return res.status(400).json({ 
+          message: `الكمية في المخزون غير كافية للمادة: ${item.itemName}. المتوفر: ${item.qin}, المطلوب: ${itemData.quantity}` 
+        });
+      }
 
       item.qin -= itemData.quantity;
-      if (item.qin === 0) itemsToDelete.push(item._id);
-      else await item.save({ session });
+      await item.save({ session });
 
       itemsDetails.push({
         item: item._id,
@@ -170,20 +207,21 @@ const post_add_receipt = async (req, res) => {
       });
     }
 
-    if (itemsToDelete.length) {
-      await Storge.deleteMany({ _id: { $in: itemsToDelete } }).session(session);
-    }
-
-    // ضمان وجود توقيع المدير دائماً
+    // توقيع المدير
     const finalManagerSignature =
       managerSignature && managerSignature.trim() !== ""
         ? managerSignature
-        : "https://res.cloudinary.com/ONE/image/upload/v1765173955/s_rylte8.png";
+        : process.env.MANAGER_SIGNATURE_URL || "https://res.cloudinary.com/de0pulmmw/image/upload/v1765173955/s_rylte8.png";
 
     // إنشاء السند
     const receipt = new Receipt({
       type: "استلام",
-      receiver: { ...receiver, signature: receiverSignature },
+      receiver: { 
+        name: receiver.name,
+        rank: receiver.rank,
+        number: receiver.number,
+        signature: receiverSignature 
+      },
       managerSignature: finalManagerSignature,
       items: itemsDetails
     });
@@ -196,6 +234,8 @@ const post_add_receipt = async (req, res) => {
       receipt.pdfUrl = pdfResult.url;
       receipt.pdfPublicId = pdfResult.public_id;
       await receipt.save({ session });
+      
+      console.log("✅ تم رفع PDF بنجاح:", pdfResult.url);
     } catch (pdfErr) {
       console.error("❌ خطأ في إنشاء PDF:", pdfErr);
     }
@@ -206,8 +246,7 @@ const post_add_receipt = async (req, res) => {
     res.status(201).json({
       message: "تم إضافة السند بنجاح",
       receiptId: receipt._id,
-      pdfUrl: receipt.pdfUrl,
-      itemsDeleted: itemsToDelete.length
+      pdfUrl: receipt.pdfUrl
     });
 
   } catch (err) {
@@ -224,7 +263,7 @@ const post_add_receipt = async (req, res) => {
 // ================== جلب جميع السندات ==================
 const get_all_receipts = async (req, res) => {
   try {
-    const receipts = await Receipt.find({}).sort({ createdAt: -1 });
+    const receipts = await Receipt.find({ type: "استلام" }).sort({ createdAt: -1 });
     res.status(200).json(receipts);
   } catch (err) {
     res.status(500).json({ message: "حدث خطأ", error: err.message });
@@ -235,9 +274,15 @@ const get_all_receipts = async (req, res) => {
 const get_receipt_by_id = async (req, res) => {
   try {
     const { id } = req.params;
-    if (!mongoose.Types.ObjectId.isValid(id)) return res.status(400).json({ message: "رقم السند غير صحيح" });
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "رقم السند غير صحيح" });
+    }
+    
     const receipt = await Receipt.findById(id);
-    if (!receipt) return res.status(404).json({ message: "السند غير موجود" });
+    if (!receipt) {
+      return res.status(404).json({ message: "السند غير موجود" });
+    }
+    
     res.status(200).json(receipt);
   } catch (err) {
     res.status(500).json({ message: "حدث خطأ", error: err.message });
