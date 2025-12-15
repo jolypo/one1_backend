@@ -32,13 +32,13 @@ const uploadPDFtoCloudinary = async (buffer, folder = "receipts") => {
 
 // ================== إنشاء PDF ==================
 const generateReceiptPDF = async (receipt) => {
-  return new Promise((resolve, reject) => {
+  return new Promise(async (resolve, reject) => {
     try {
       const fonts = {
         Cairo: {
           normal: path.join(__dirname, "../fonts/Cairo-Regular.ttf"),
-          bold: path.join(__dirname, "../fonts/Cairo-Bold.ttf")
-        }
+          bold: path.join(__dirname, "../fonts/Cairo-Bold.ttf"),
+        },
       };
       const printer = new PdfPrinter(fonts);
 
@@ -63,55 +63,43 @@ const generateReceiptPDF = async (receipt) => {
         ]);
       });
 
-      // التواقيع
-      const receiverSignature = receipt.receiver.signature
-        ? { image: `data:image/png;base64,${cleanBase64(receipt.receiver.signature)}`, width: 100, height: 50, alignment: "center" }
-        : { text: "لا يوجد توقيع", alignment: "center", color: "gray" };
+      // ======= التواقيع =======
+      let receiverSignature = { text: "لا يوجد توقيع", alignment: "center", color: "gray" };
+      if (receipt.receiver.signature) {
+        if (receipt.receiver.signature.startsWith("data:image")) {
+          receiverSignature = { image: receipt.receiver.signature, width: 100, height: 50, alignment: "center" };
+        } else if (receipt.receiver.signature.startsWith("http")) {
+          const buffer = await fetchImageBuffer(receipt.receiver.signature);
+          if (buffer) receiverSignature = { image: buffer, width: 100, height: 50, alignment: "center" };
+        }
+      }
 
-      const managerSignature = receipt.managerSignature
-        ? { image: receipt.managerSignature, width: 100, height: 50, alignment: "center" }
-        : { text: "لا يوجد توقيع", alignment: "center", color: "gray" };
+      let managerSignature = { text: "لا يوجد توقيع", alignment: "center", color: "gray" };
+      if (receipt.managerSignature) {
+        if (receipt.managerSignature.startsWith("data:image")) {
+          managerSignature = { image: receipt.managerSignature, width: 100, height: 50, alignment: "center" };
+        } else if (receipt.managerSignature.startsWith("http")) {
+          const buffer = await fetchImageBuffer(receipt.managerSignature);
+          if (buffer) managerSignature = { image: buffer, width: 100, height: 50, alignment: "center" };
+        }
+      }
 
       const docDefinition = {
         pageSize: "A4",
         defaultStyle: { font: "Cairo", alignment: "right" },
         pageMargins: [40, 30, 40, 30],
         content: [
-          {
-            columns: [
-              { text: `التاريخ: ${moment(receipt.date).format("YYYY/MM/DD")}`, alignment: "right", width: "*" },
-              { text: "®", alignment: "left", fontSize: 40, width: "auto" }
-            ]
-          },
+          { text: `التاريخ: ${new Date(receipt.date).toLocaleDateString("ar-SA")}`, alignment: "right" },
           { text: "\nسند استلام\n", alignment: "center", bold: true, fontSize: 18, color: "#255aeb" },
           {
             table: { headerRows: 1, widths: ["auto", "*", "*", "*", "auto"], body: itemsTable },
-            layout: {
-              fillColor: (rowIndex) => rowIndex === 0 ? "#255aeb" : rowIndex % 2 === 0 ? "#f9f9f9" : null,
-              hLineColor: () => "#e0e0e0",
-              vLineColor: () => "#e0e0e0"
-            },
-            margin: [0, 10, 0, 20]
+            layout: { fillColor: (rowIndex) => rowIndex === 0 ? "#255aeb" : rowIndex % 2 === 0 ? "#f9f9f9" : null }
           },
           { text: "أقر أنا الموقع أدناه بأنني استلمت كافة المواد المذكورة أعلاه", alignment: "center", margin: [0, 0, 0, 40] },
           {
             columns: [
-              {
-                width: "50%",
-                stack: [
-                  { text: "المسلم", alignment: "center", bold: true, margin: [0, 0, 0, 5] },
-                  managerSignature,
-                  { text: "خالد", alignment: "center", margin: [0, 5, 0, 0], fontSize: 12 }
-                ]
-              },
-              {
-                width: "50%",
-                stack: [
-                  { text: "المستلم", alignment: "center", bold: true, margin: [0, 0, 0, 5] },
-                  receiverSignature,
-                  { text: receipt.receiver.name, alignment: "center", margin: [0, 5, 0, 0], fontSize: 12 }
-                ]
-              }
+              { width: "50%", stack: [{ text: "المسلم", alignment: "center", bold: true, margin: [0, 0, 0, 5] }, managerSignature, { text: "خالد", alignment: "center", margin: [0,5,0,0], fontSize: 12 }] },
+              { width: "50%", stack: [{ text: "المستلم", alignment: "center", bold: true, margin: [0, 0, 0, 5] }, receiverSignature, { text: receipt.receiver.name, alignment: "center", margin: [0,5,0,0], fontSize: 12 }] }
             ],
             columnGap: 20
           }
@@ -120,9 +108,9 @@ const generateReceiptPDF = async (receipt) => {
 
       const pdfDoc = printer.createPdfKitDocument(docDefinition);
       const chunks = [];
-      
-      pdfDoc.on('data', chunk => chunks.push(chunk));
-      pdfDoc.on('end', async () => {
+
+      pdfDoc.on("data", (chunk) => chunks.push(chunk));
+      pdfDoc.on("end", async () => {
         try {
           const pdfBuffer = Buffer.concat(chunks);
           const uploaded = await uploadPDFtoCloudinary(pdfBuffer, "receipts");
@@ -131,9 +119,8 @@ const generateReceiptPDF = async (receipt) => {
           reject(err);
         }
       });
-      
-      pdfDoc.end();
 
+      pdfDoc.end();
     } catch (err) {
       reject(err);
     }
