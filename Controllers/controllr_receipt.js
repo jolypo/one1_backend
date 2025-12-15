@@ -33,9 +33,9 @@ const uploadPDFtoCloudinary = async (buffer, folder = "receipts") => {
   return new Promise((resolve, reject) => {
     const uploadStream = cloudinary.uploader.upload_stream(
       {
-        resource_type: "raw",   // لأنه PDF
+        resource_type: "raw",       // لأن الملفات PDF
         folder,
-        upload_preset: "public_receipts",  // <-- هنا اسم الـ preset الجديد
+        upload_preset: "public_receipts",  // <-- Unsigned Preset
       },
       (error, result) => {
         if (error) {
