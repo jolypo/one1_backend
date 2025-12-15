@@ -32,7 +32,7 @@ const uploadPDFtoCloudinary = async (buffer, folder = "receipts") => {
   console.log("📤 رفع PDF إلى Cloudinary...");
   return new Promise((resolve, reject) => {
     const uploadStream = cloudinary.uploader.upload_stream(
-      { resource_type: "raw", folder, format: "pdf" },
+      { resource_type: "raw", folder, format: "pdf", upload_preset: "public_receipts" },
       (error, result) => {
         if (error) {
           console.error("❌ خطأ في رفع PDF:", error);
