@@ -1,10 +1,10 @@
 require('dotenv').config();
-
 const fs = require("fs");
 const path = require("path");
 const mongoose = require("mongoose");
 const moment = require("moment");
 const PdfPrinter = require("pdfmake");
+const https = require("https");
 
 const Receipt = require("../models/receipt"); 
 const Storge = require("../models/stroge");
@@ -207,13 +207,12 @@ const post_add_receipt = async (req, res) => {
       });
     }
 
-    // توقيع المدير
+    // توقيع المدير ثابت داخل السكيما
     const finalManagerSignature =
       managerSignature && managerSignature.trim() !== ""
         ? managerSignature
         : process.env.MANAGER_SIGNATURE_URL || "https://res.cloudinary.com/de0pulmmw/image/upload/v1765173955/s_rylte8.png";
 
-    // إنشاء السند
     const receipt = new Receipt({
       type: "استلام",
       receiver: { 
@@ -234,7 +233,6 @@ const post_add_receipt = async (req, res) => {
       receipt.pdfUrl = pdfResult.url;
       receipt.pdfPublicId = pdfResult.public_id;
       await receipt.save({ session });
-      
       console.log("✅ تم رفع PDF بنجاح:", pdfResult.url);
     } catch (pdfErr) {
       console.error("❌ خطأ في إنشاء PDF:", pdfErr);
