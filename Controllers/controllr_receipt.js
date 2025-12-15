@@ -8,7 +8,7 @@ const PdfPrinter = require("pdfmake");
 
 const Receipt = require("../models/receipt"); 
 const Storge = require("../models/stroge");
-const cloudinary = require("../utils/cloudinary");
+const cloudinary = require("./cloudinary");
 
 // ================== تنظيف Base64 ==================
 const cleanBase64 = (data) => {
