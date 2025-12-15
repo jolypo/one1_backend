@@ -243,7 +243,7 @@ const post_add_receipt = async (req, res) => {
     // إنشاء PDF ورفعه
     try {
       const pdfResult = await generateReceiptPDF(receipt);
-      receipt.pdfUrl = pdfResult.url;
+      receipt.pdfUrl = pdfResult.url;       // الرابط المباشر من Cloudinary
       receipt.pdfPublicId = pdfResult.public_id;
       await receipt.save({ session });
       console.log("✅ تم رفع PDF بنجاح:", pdfResult.url);
@@ -254,6 +254,7 @@ const post_add_receipt = async (req, res) => {
     await session.commitTransaction();
     session.endSession();
 
+    // إرسال الرابط المباشر للـ frontend
     res.status(201).json({
       message: "تم إضافة السند بنجاح",
       receiptId: receipt._id,
