@@ -32,7 +32,11 @@ const uploadPDFtoCloudinary = async (buffer, folder = "receipts") => {
   console.log("📤 رفع PDF إلى Cloudinary...");
   return new Promise((resolve, reject) => {
     const uploadStream = cloudinary.uploader.upload_stream(
-      { resource_type: "raw", folder, format: "pdf", upload_preset: "public_receipts" },
+      {
+        resource_type: "raw",   // لأنه PDF
+        folder,
+        upload_preset: "public_receipts",  // <-- هنا اسم الـ preset الجديد
+      },
       (error, result) => {
         if (error) {
           console.error("❌ خطأ في رفع PDF:", error);
@@ -42,9 +46,11 @@ const uploadPDFtoCloudinary = async (buffer, folder = "receipts") => {
         resolve({ url: result.secure_url, public_id: result.public_id });
       }
     );
+
     uploadStream.end(buffer);
   });
 };
+
 
 // ================== إنشاء PDF ==================
 const generateReceiptPDF = async (receipt) => {
