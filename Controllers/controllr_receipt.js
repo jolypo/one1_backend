@@ -1,166 +1,118 @@
-require('dotenv').config();
-const fs = require("fs");
+require("dotenv").config();
 const path = require("path");
 const mongoose = require("mongoose");
-const moment = require("moment");
 const PdfPrinter = require("pdfmake");
 const https = require("https");
 
-const Receipt = require("../models/receipt"); 
+const Receipt = require("../models/receipt");
 const Storge = require("../models/stroge");
 const cloudinary = require("./cloudinary");
 
-// ================== تنظيف Base64 ==================
-const cleanBase64 = (data) => {
-  if (!data) return null;
-  return data.replace(/^data:image\/\w+;base64,/, "");
-};
-
-// ================== جلب صورة من رابط ==================
-const fetchImageBuffer = (url) => {
-  return new Promise((resolve, reject) => {
-    https.get(url, (res) => {
-      const chunks = [];
-      res.on("data", (chunk) => chunks.push(chunk));
-      res.on("end", () => resolve(Buffer.concat(chunks)));
-    }).on("error", (err) => reject(err));
+/* ================== أدوات مساعدة ================== */
+const fetchImageBuffer = (url) =>
+  new Promise((resolve, reject) => {
+    https
+      .get(url, (res) => {
+        const chunks = [];
+        res.on("data", (c) => chunks.push(c));
+        res.on("end", () => resolve(Buffer.concat(chunks)));
+      })
+      .on("error", reject);
   });
-};
 
-// ================== رفع PDF إلى Cloudinary ==================
-const uploadPDFtoCloudinary = async (buffer, folder = "receipts") => {
-  console.log("📤 رفع PDF إلى Cloudinary...");
-  return new Promise((resolve, reject) => {
-    const uploadStream = cloudinary.uploader.upload_stream(
+const uploadPDFtoCloudinary = (buffer) =>
+  new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
       {
-        resource_type: "raw",       // لأن الملفات PDF
-        folder,
-        upload_preset: "public_receipts",  // <-- Unsigned Preset
+        resource_type: "raw",
+        folder: "receipts",
+        upload_preset: "public_receipts",
       },
-      (error, result) => {
-        if (error) {
-          console.error("❌ خطأ في رفع PDF:", error);
-          return reject(error);
-        }
-        console.log("✅ تم رفع PDF:", result.secure_url);
+      (err, result) => {
+        if (err) return reject(err);
         resolve({ url: result.secure_url, public_id: result.public_id });
       }
     );
-
-    uploadStream.end(buffer);
+    stream.end(buffer);
   });
-};
 
-
-// ================== إنشاء PDF ==================
+/* ================== إنشاء PDF ================== */
 const generateReceiptPDF = async (receipt) => {
-  return new Promise(async (resolve, reject) => {
-    try {
-      console.log("📝 إنشاء PDF للسند...");
-      const fonts = {
-        Cairo: {
-          normal: path.join(__dirname, "../fonts/Cairo-Regular.ttf"),
-          bold: path.join(__dirname, "../fonts/Cairo-Bold.ttf"),
-        },
-      };
-      const printer = new PdfPrinter(fonts);
+  const fonts = {
+    Cairo: {
+      normal: path.join(__dirname, "../fonts/Cairo-Regular.ttf"),
+      bold: path.join(__dirname, "../fonts/Cairo-Bold.ttf"),
+    },
+  };
 
-      const itemsTable = [
-        [
-          { text: "#", bold: true, alignment: "center", fillColor: "#255aeb", color: "white" },
-          { text: "اسم المادة", bold: true, alignment: "center", fillColor: "#255aeb", color: "white" },
-          { text: "نوع المادة", bold: true, alignment: "center", fillColor: "#255aeb", color: "white" },
-          { text: "رقم المادة", bold: true, alignment: "center", fillColor: "#255aeb", color: "white" },
-          { text: "الكمية", bold: true, alignment: "center", fillColor: "#255aeb", color: "white" }
-        ]
-      ];
+  const printer = new PdfPrinter(fonts);
 
-      receipt.items.forEach((item, index) => {
-        itemsTable.push([
-          { text: (index + 1).toString(), alignment: "center" },
-          { text: item.itemName || "", alignment: "center" },
-          { text: item.itemType || "", alignment: "center" },
-          { text: item.itemNumber || "", alignment: "center" },
-          { text: item.quantity.toString(), alignment: "center" }
-        ]);
-      });
+  const body = [
+    ["#", "اسم المادة", "نوع المادة", "رقم المادة", "الكمية"].map((t) => ({
+      text: t,
+      bold: true,
+      alignment: "center",
+    })),
+  ];
 
-      // ======= التواقيع =======
-      let receiverSignature = { text: "لا يوجد توقيع", alignment: "center", color: "gray" };
-      if (receipt.receiver.signature) {
-        if (receipt.receiver.signature.startsWith("data:image")) {
-          receiverSignature = { image: receipt.receiver.signature, width: 100, height: 50, alignment: "center" };
-        } else if (receipt.receiver.signature.startsWith("http")) {
-          try {
-            const buffer = await fetchImageBuffer(receipt.receiver.signature);
-            if (buffer) receiverSignature = { image: buffer, width: 100, height: 50, alignment: "center" };
-          } catch (err) {
-            console.error("❌ خطأ في جلب توقيع المستلم من URL:", err);
-          }
-        }
+  receipt.items.forEach((i, idx) => {
+    body.push([
+      { text: idx + 1, alignment: "center" },
+      { text: i.itemName, alignment: "center" },
+      { text: i.itemType, alignment: "center" },
+      { text: i.itemNumber, alignment: "center" },
+      { text: i.quantity, alignment: "center" },
+    ]);
+  });
+
+  let receiverSig = { text: "لا يوجد توقيع", alignment: "center" };
+  if (receipt.receiver.signature?.startsWith("http")) {
+    receiverSig = { image: await fetchImageBuffer(receipt.receiver.signature), width: 100 };
+  } else if (receipt.receiver.signature?.startsWith("data:image")) {
+    receiverSig = { image: receipt.receiver.signature, width: 100 };
+  }
+
+  let managerSig = { text: "لا يوجد توقيع", alignment: "center" };
+  if (receipt.managerSignature?.startsWith("http")) {
+    managerSig = { image: await fetchImageBuffer(receipt.managerSignature), width: 100 };
+  } else if (receipt.managerSignature?.startsWith("data:image")) {
+    managerSig = { image: receipt.managerSignature, width: 100 };
+  }
+
+  const doc = {
+    pageSize: "A4",
+    defaultStyle: { font: "Cairo", alignment: "right" },
+    content: [
+      { text: `التاريخ: ${new Date(receipt.createdAt).toLocaleDateString("ar-SA")}` },
+      { text: "\nسند استلام\n", alignment: "center", bold: true, fontSize: 18 },
+      { table: { headerRows: 1, widths: ["auto", "*", "*", "*", "auto"], body } },
+      { text: "\nأقر باستلام جميع المواد الموضحة أعلاه", alignment: "center" },
+      {
+        columns: [
+          { stack: [{ text: "المسلم", alignment: "center", bold: true }, managerSig] },
+          { stack: [{ text: "المستلم", alignment: "center", bold: true }, receiverSig] },
+        ],
+        margin: [0, 30],
+      },
+    ],
+  };
+
+  return new Promise((resolve, reject) => {
+    const pdf = printer.createPdfKitDocument(doc);
+    const chunks = [];
+    pdf.on("data", (c) => chunks.push(c));
+    pdf.on("end", async () => {
+      try {
+        resolve(await uploadPDFtoCloudinary(Buffer.concat(chunks)));
+      } catch (e) {
+        reject(e);
       }
-
-      let managerSignature = { text: "لا يوجد توقيع", alignment: "center", color: "gray" };
-      if (receipt.managerSignature) {
-        if (receipt.managerSignature.startsWith("data:image")) {
-          managerSignature = { image: receipt.managerSignature, width: 100, height: 50, alignment: "center" };
-        } else if (receipt.managerSignature.startsWith("http")) {
-          try {
-            const buffer = await fetchImageBuffer(receipt.managerSignature);
-            if (buffer) managerSignature = { image: buffer, width: 100, height: 50, alignment: "center" };
-          } catch (err) {
-            console.error("❌ خطأ في جلب توقيع المدير من URL:", err);
-          }
-        }
-      }
-
-      const docDefinition = {
-        pageSize: "A4",
-        defaultStyle: { font: "Cairo", alignment: "right" },
-        pageMargins: [40, 30, 40, 30],
-        content: [
-          { text: `التاريخ: ${new Date(receipt.date).toLocaleDateString("ar-SA")}`, alignment: "right" },
-          { text: "\nسند استلام\n", alignment: "center", bold: true, fontSize: 18, color: "#255aeb" },
-          {
-            table: { headerRows: 1, widths: ["auto", "*", "*", "*", "auto"], body: itemsTable },
-            layout: { fillColor: (rowIndex) => rowIndex === 0 ? "#255aeb" : rowIndex % 2 === 0 ? "#f9f9f9" : null }
-          },
-          { text: "أقر أنا الموقع أدناه بأنني استلمت كافة المواد المذكورة أعلاه", alignment: "center", margin: [0, 0, 0, 40] },
-          {
-            columns: [
-              { width: "50%", stack: [{ text: "المسلم", alignment: "center", bold: true, margin: [0, 0, 0, 5] }, managerSignature, { text: "خالد", alignment: "center", margin: [0,5,0,0], fontSize: 12 }] },
-              { width: "50%", stack: [{ text: "المستلم", alignment: "center", bold: true, margin: [0, 0, 0, 5] }, receiverSignature, { text: receipt.receiver.name, alignment: "center", margin: [0,5,0,0], fontSize: 12 }] }
-            ],
-            columnGap: 20
-          }
-        ]
-      };
-
-      const pdfDoc = printer.createPdfKitDocument(docDefinition);
-      const chunks = [];
-
-      pdfDoc.on("data", (chunk) => chunks.push(chunk));
-      pdfDoc.on("end", async () => {
-        try {
-          const pdfBuffer = Buffer.concat(chunks);
-          console.log("📦 طول الـ PDF:", pdfBuffer.length);
-          const uploaded = await uploadPDFtoCloudinary(pdfBuffer, "receipts");
-          resolve(uploaded);
-        } catch (err) {
-          console.error("❌ خطأ في رفع PDF بعد الإنشاء:", err);
-          reject(err);
-        }
-      });
-
-      pdfDoc.end();
-    } catch (err) {
-      console.error("❌ خطأ عام أثناء إنشاء PDF:", err);
-      reject(err);
-    }
+    });
+    pdf.end();
   });
 };
 
-// ================== إضافة سند استلام ==================
+/* ================== إضافة سند ================== */
 const post_add_receipt = async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
@@ -168,142 +120,66 @@ const post_add_receipt = async (req, res) => {
   try {
     const { receiver, items, receiverSignature, managerSignature } = req.body;
 
-    if (!receiver || !items || !receiverSignature) {
-      await session.abortTransaction();
-      session.endSession();
-      return res.status(400).json({ message: "البيانات المطلوبة ناقصة" });
+    if (!receiver || !receiverSignature || !Array.isArray(items) || !items.length) {
+      throw new Error("البيانات ناقصة");
     }
 
-    if (!receiver.name || !receiver.rank || !receiver.number) {
-      await session.abortTransaction();
-      session.endSession();
-      return res.status(400).json({ message: "بيانات المستلم غير مكتملة" });
-    }
+    const details = [];
 
-    if (!Array.isArray(items) || items.length === 0) {
-      await session.abortTransaction();
-      session.endSession();
-      return res.status(400).json({ message: "يجب إضافة مادة واحدة على الأقل" });
-    }
+    for (const i of items) {
+      const item = await Storge.findById(i.item).session(session);
+      if (!item) throw new Error("مادة غير موجودة");
+      if (item.qin < i.quantity) throw new Error("الكمية غير كافية");
 
-    const itemsDetails = [];
-
-    for (let i = 0; i < items.length; i++) {
-      const itemData = items[i];
-
-      if (!itemData.item || !itemData.quantity || itemData.quantity <= 0) {
-        await session.abortTransaction();
-        session.endSession();
-        return res.status(400).json({ 
-          message: `البيانات غير صحيحة للمادة رقم ${i + 1}` 
-        });
-      }
-
-      const item = await Storge.findById(itemData.item).session(session);
-
-      if (!item) {
-        await session.abortTransaction();
-        session.endSession();
-        return res.status(404).json({ message: `المادة غير موجودة` });
-      }
-
-      if (item.qin < itemData.quantity) {
-        await session.abortTransaction();
-        session.endSession();
-        return res.status(400).json({ 
-          message: `الكمية في المخزون غير كافية للمادة: ${item.itemName}. المتوفر: ${item.qin}, المطلوب: ${itemData.quantity}` 
-        });
-      }
-
-      item.qin -= itemData.quantity;
+      item.qin -= i.quantity;
       await item.save({ session });
 
-      itemsDetails.push({
+      details.push({
         item: item._id,
         itemName: item.itemName,
-        itemNumber: item.itemNumber,
         itemType: item.itemType,
-        quantity: itemData.quantity
+        itemNumber: item.itemNumber,
+        quantity: i.quantity,
       });
     }
 
-    const finalManagerSignature =
-      managerSignature && managerSignature.trim() !== ""
-        ? managerSignature
-        : process.env.MANAGER_SIGNATURE_URL || "https://res.cloudinary.com/de0pulmmw/image/upload/v1765173955/s_rylte8.png";
-
     const receipt = new Receipt({
       type: "استلام",
-      receiver: { 
-        name: receiver.name,
-        rank: receiver.rank,
-        number: receiver.number,
-        signature: receiverSignature 
-      },
-      managerSignature: finalManagerSignature,
-      items: itemsDetails
+      receiver: { ...receiver, signature: receiverSignature },
+      managerSignature: managerSignature || process.env.MANAGER_SIGNATURE_URL,
+      items: details,
     });
 
     await receipt.save({ session });
 
-    // إنشاء PDF ورفعه
-    try {
-    const pdfResult = await generateReceiptPDF(receipt);
-receipt.pdfUrl = pdfResult.url;       // رابط مباشر عام
-receipt.pdfPublicId = pdfResult.public_id;
-await receipt.save({ session });
+    await session.commitTransaction();
+    session.endSession();
 
-res.status(201).json({
-  message: "تم إضافة السند بنجاح",
-  receiptId: receipt._id,
-  pdfUrl: receipt.pdfUrl  // استخدم هذا الرابط مباشرة في Frontend
-});
+    const pdf = await generateReceiptPDF(receipt);
+    receipt.pdfUrl = pdf.url;
+    receipt.pdfPublicId = pdf.public_id;
+    await receipt.save();
 
-
-  } catch (err) {
+    res.status(201).json({ message: "تم بنجاح", pdfUrl: receipt.pdfUrl });
+  } catch (e) {
     await session.abortTransaction();
     session.endSession();
-    console.error("❌ خطأ أثناء إضافة السند:", err);
-    res.status(500).json({ 
-      message: "حدث خطأ أثناء إضافة السند", 
-      error: err.message 
-    });
+    res.status(500).json({ message: e.message });
   }
 };
 
-// ================== جلب جميع السندات ==================
-const get_all_receipts = async (req, res) => {
-  try {
-    const receipts = await Receipt.find({ type: "استلام" }).sort({ createdAt: -1 });
-    res.status(200).json(receipts);
-  } catch (err) {
-    console.error("❌ خطأ أثناء جلب جميع السندات:", err);
-    res.status(500).json({ message: "حدث خطأ", error: err.message });
-  }
-};
+/* ================== جلب ================== */
+const get_all_receipts = async (_, res) =>
+  res.json(await Receipt.find({ type: "استلام" }).sort({ createdAt: -1 }));
 
-// ================== جلب سند حسب الـ ID ==================
 const get_receipt_by_id = async (req, res) => {
-  try {
-    const { id } = req.params;
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({ message: "رقم السند غير صحيح" });
-    }
+  if (!mongoose.Types.ObjectId.isValid(req.params.id))
+    return res.status(400).json({ message: "ID غير صحيح" });
 
-    const receipt = await Receipt.findById(id);
-    if (!receipt) {
-      return res.status(404).json({ message: "السند غير موجود" });
-    }
+  const receipt = await Receipt.findById(req.params.id);
+  if (!receipt) return res.status(404).json({ message: "غير موجود" });
 
-    res.status(200).json(receipt);
-  } catch (err) {
-    console.error("❌ خطأ أثناء جلب السند:", err);
-    res.status(500).json({ message: "حدث خطأ", error: err.message });
-  }
+  res.json(receipt);
 };
 
-module.exports = { 
-  post_add_receipt, 
-  get_all_receipts, 
-  get_receipt_by_id
-};
+module.exports = { post_add_receipt, get_all_receipts, get_receipt_by_id };
