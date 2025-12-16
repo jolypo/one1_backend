@@ -20,12 +20,15 @@ const fetchImageBuffer = (url) =>
       .on("error", reject);
   });
 
+// تعديل رفع PDF على Cloudinary بحيث يصبح قابلاً للفتح مباشرة
 const uploadPDFtoCloudinary = (buffer) =>
   new Promise((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream(
       {
         resource_type: "raw",
         folder: "receipts",
+        format: "pdf", // ← هذا السطر الجديد
+        upload_preset: "public_receipts",
       },
       (err, result) => {
         if (err) return reject(err);
@@ -155,7 +158,7 @@ const post_add_receipt = async (req, res) => {
 
     // إنشاء PDF ورفعها إلى Cloudinary
     const pdf = await generateReceiptPDF(receipt);
-    receipt.pdfUrl = pdf.url;
+    receipt.pdfUrl = pdf.url;          // رابط مباشر للفتح
     receipt.pdfPublicId = pdf.public_id;
     await receipt.save();
 
