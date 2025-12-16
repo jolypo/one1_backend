@@ -65,19 +65,15 @@ const generateReceiptPDF = async (receipt) => {
     ]);
   });
 
-  let receiverSig = { text: "لا يوجد توقيع", alignment: "center" };
-  if (receipt.receiver.signature?.startsWith("http")) {
-    receiverSig = { image: await fetchImageBuffer(receipt.receiver.signature), width: 100 };
-  } else if (receipt.receiver.signature?.startsWith("data:image")) {
-    receiverSig = { image: receipt.receiver.signature, width: 100 };
-  }
+  const getSignature = async (sig) => {
+    if (!sig) return { text: "لا يوجد توقيع", alignment: "center" };
+    if (sig.startsWith("http")) return { image: await fetchImageBuffer(sig), width: 100 };
+    if (sig.startsWith("data:image")) return { image: sig, width: 100 };
+    return { text: "لا يوجد توقيع", alignment: "center" };
+  };
 
-  let managerSig = { text: "لا يوجد توقيع", alignment: "center" };
-  if (receipt.managerSignature?.startsWith("http")) {
-    managerSig = { image: await fetchImageBuffer(receipt.managerSignature), width: 100 };
-  } else if (receipt.managerSignature?.startsWith("data:image")) {
-    managerSig = { image: receipt.managerSignature, width: 100 };
-  }
+  const receiverSig = await getSignature(receipt.receiver.signature);
+  const managerSig = await getSignature(receipt.managerSignature);
 
   const doc = {
     pageSize: "A4",
@@ -103,7 +99,8 @@ const generateReceiptPDF = async (receipt) => {
     pdf.on("data", (c) => chunks.push(c));
     pdf.on("end", async () => {
       try {
-        resolve(await uploadPDFtoCloudinary(Buffer.concat(chunks)));
+        const uploaded = await uploadPDFtoCloudinary(Buffer.concat(chunks));
+        resolve(uploaded);
       } catch (e) {
         reject(e);
       }
@@ -151,7 +148,6 @@ const post_add_receipt = async (req, res) => {
     });
 
     await receipt.save({ session });
-
     await session.commitTransaction();
     session.endSession();
 
