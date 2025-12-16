@@ -65,15 +65,25 @@ const generateReceiptPDF = async (receipt) => {
     ]);
   });
 
-  const getSignature = async (sig) => {
-    if (!sig) return { text: "لا يوجد توقيع", alignment: "center" };
-    if (sig.startsWith("http")) return { image: await fetchImageBuffer(sig), width: 100 };
-    if (sig.startsWith("data:image")) return { image: sig, width: 100 };
-    return { text: "لا يوجد توقيع", alignment: "center" };
-  };
+  // توقيع المستلم
+  let receiverSig = { text: "لا يوجد توقيع", alignment: "center" };
+  if (receipt.receiver.signature) {
+    if (receipt.receiver.signature.startsWith("http")) {
+      receiverSig = { image: await fetchImageBuffer(receipt.receiver.signature), width: 100 };
+    } else if (receipt.receiver.signature.startsWith("data:image")) {
+      receiverSig = { image: receipt.receiver.signature, width: 100 };
+    }
+  }
 
-  const receiverSig = await getSignature(receipt.receiver.signature);
-  const managerSig = await getSignature(receipt.managerSignature);
+  // توقيع المدير
+  let managerSig = { text: "لا يوجد توقيع", alignment: "center" };
+  if (receipt.managerSignature) {
+    if (receipt.managerSignature.startsWith("http")) {
+      managerSig = { image: await fetchImageBuffer(receipt.managerSignature), width: 100 };
+    } else if (receipt.managerSignature.startsWith("data:image")) {
+      managerSig = { image: receipt.managerSignature, width: 100 };
+    }
+  }
 
   const doc = {
     pageSize: "A4",
@@ -99,8 +109,7 @@ const generateReceiptPDF = async (receipt) => {
     pdf.on("data", (c) => chunks.push(c));
     pdf.on("end", async () => {
       try {
-        const uploaded = await uploadPDFtoCloudinary(Buffer.concat(chunks));
-        resolve(uploaded);
+        resolve(await uploadPDFtoCloudinary(Buffer.concat(chunks)));
       } catch (e) {
         reject(e);
       }
@@ -125,8 +134,8 @@ const post_add_receipt = async (req, res) => {
 
     for (const i of items) {
       const item = await Storge.findById(i.item).session(session);
-      if (!item) throw new Error("مادة غير موجودة");
-      if (item.qin < i.quantity) throw new Error("الكمية غير كافية");
+      if (!item) throw new Error(`المادة غير موجودة: ${i.itemName}`);
+      if (item.qin < i.quantity) throw new Error(`الكمية غير كافية للمادة: ${i.itemName}`);
 
       item.qin -= i.quantity;
       await item.save({ session });
@@ -151,20 +160,26 @@ const post_add_receipt = async (req, res) => {
     await session.commitTransaction();
     session.endSession();
 
-    const pdf = await generateReceiptPDF(receipt);
-    receipt.pdfUrl = pdf.url;
-    receipt.pdfPublicId = pdf.public_id;
+    const pdfResult = await generateReceiptPDF(receipt);
+
+    receipt.pdfUrl = pdfResult.url;
+    receipt.pdfPublicId = pdfResult.public_id;
     await receipt.save();
 
-    res.status(201).json({ message: "تم بنجاح", pdfUrl: receipt.pdfUrl });
-  } catch (e) {
+    res.status(201).json({
+      message: "تم إنشاء سند الاستلام بنجاح",
+      pdfUrl: receipt.pdfUrl,
+      receiptId: receipt._id,
+    });
+  } catch (error) {
     await session.abortTransaction();
     session.endSession();
-    res.status(500).json({ message: e.message });
+    console.error(error);
+    res.status(500).json({ message: error.message });
   }
 };
 
-/* ================== جلب ================== */
+/* ================== جلب السندات ================== */
 const get_all_receipts = async (_, res) =>
   res.json(await Receipt.find({ type: "استلام" }).sort({ createdAt: -1 }));
 
